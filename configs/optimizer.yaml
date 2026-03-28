@@ -1,0 +1,5 @@
+long_only: true
+max_stock_weight: 0.05
+max_sector_weight: 0.25
+max_turnover: 0.25
+transaction_cost_bps: 10

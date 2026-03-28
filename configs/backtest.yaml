@@ -1,0 +1,8 @@
+rebalance_frequency: weekly
+cost_model: linear_turnover
+train_window: expanding
+report_metrics:
+  - annual_return
+  - annual_volatility
+  - sharpe
+  - max_drawdown

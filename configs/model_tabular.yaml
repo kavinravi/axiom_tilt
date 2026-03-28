@@ -1,0 +1,7 @@
+model_type: lightgbm
+target: next_week_excess_return
+validation: walk_forward
+metrics:
+  - spearman
+  - rank_ic
+  - decile_spread

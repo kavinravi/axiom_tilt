@@ -1,0 +1,9 @@
+universe: sp500
+frequency: weekly
+holding_period: 1w
+text_sources:
+  - filings
+  - transcripts
+raw_data_dir: data/raw
+interim_data_dir: data/interim
+processed_data_dir: data/processed
