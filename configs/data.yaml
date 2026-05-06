@@ -1,6 +1,8 @@
-universe: sp500
+universe: large_cap_us_equities
+universe_size: 400
 frequency: weekly
 holding_period: 1w
+document_frequency: weekly
 text_sources:
   - filings
   - transcripts

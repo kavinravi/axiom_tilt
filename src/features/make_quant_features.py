@@ -1,7 +1,7 @@
-"""Compute quantitative finance features for each stock-week."""
+"""Compute structured weekly signals for the full stock universe."""
 
 def main() -> None:
-    raise NotImplementedError('Implement quantitative feature generation.')
+    raise NotImplementedError('Implement weekly quant feature generation.')
 
 
 if __name__ == '__main__':

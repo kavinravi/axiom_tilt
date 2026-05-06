@@ -1,4 +1,4 @@
-"""Transaction cost models used in optimization and backtests."""
+"""Transaction cost models used in RL rewards and backtests."""
 
 def estimate_costs() -> None:
-    raise NotImplementedError('Implement transaction cost estimation.')
+    raise NotImplementedError('Implement weekly transaction cost estimation.')

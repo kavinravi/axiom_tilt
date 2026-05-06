@@ -1,7 +1,7 @@
-"""Normalize and standardize engineered features."""
+"""Normalize weekly features before supervised ranking and RL use."""
 
 def main() -> None:
-    raise NotImplementedError('Implement feature normalization.')
+    raise NotImplementedError('Implement weekly feature normalization.')
 
 
 if __name__ == '__main__':

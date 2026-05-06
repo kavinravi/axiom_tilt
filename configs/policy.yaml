@@ -1,0 +1,16 @@
+algorithm: ppo
+action_type: target_weights
+candidate_count: 30
+state_features:
+  - candidate_scores
+  - candidate_features
+  - current_weights
+  - recent_returns
+  - recent_turnover
+  - realized_volatility
+  - estimated_transaction_costs
+projection_method: simplex
+reward:
+  include_transaction_costs: true
+  volatility_penalty: 0.0
+  drawdown_penalty: 0.0

@@ -1,8 +1,0 @@
-policy_type: contextual_bandit
-action_space: discrete_templates
-templates:
-  - conservative
-  - balanced
-  - aggressive
-  - high_momentum
-  - defensive_quality

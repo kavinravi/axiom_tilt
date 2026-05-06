@@ -1,4 +1,4 @@
-"""Portfolio optimizer that maps scores and targets to weights."""
+"""Project RL actions into feasible portfolio weights under constraints."""
 
 def optimize_portfolio() -> None:
-    raise NotImplementedError('Implement portfolio optimization.')
+    raise NotImplementedError('Implement constrained action projection.')

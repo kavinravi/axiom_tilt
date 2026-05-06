@@ -1,7 +1,7 @@
-"""Aggregate document embeddings into stock-week text features."""
+"""Aggregate document embeddings into weekly stock-level text features."""
 
 def main() -> None:
-    raise NotImplementedError('Implement text feature aggregation.')
+    raise NotImplementedError('Implement weekly text feature aggregation.')
 
 
 if __name__ == '__main__':

@@ -1,7 +1,7 @@
-"""Build the final model-ready feature matrix."""
+"""Build the full-universe feature matrix used by the ranking model."""
 
 def main() -> None:
-    raise NotImplementedError('Implement feature matrix assembly.')
+    raise NotImplementedError('Implement ranker feature matrix assembly.')
 
 
 if __name__ == '__main__':

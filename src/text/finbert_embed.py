@@ -1,7 +1,7 @@
-"""Generate FinBERT embeddings for cleaned financial text."""
+"""Generate weekly FinBERT embeddings from cleaned financial documents."""
 
 def main() -> None:
-    raise NotImplementedError('Implement FinBERT embedding generation.')
+    raise NotImplementedError('Implement weekly FinBERT embedding generation.')
 
 
 if __name__ == '__main__':

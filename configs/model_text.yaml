@@ -1,7 +1,8 @@
 model_name: ProsusAI/finbert
-pooling: cls
+representation: cls
+weekly_aggregation: mean
 chunk_long_documents: true
 max_length: 512
 batch_size: 8
 mixed_precision: true
-fine_tune: false
+fine_tune: true

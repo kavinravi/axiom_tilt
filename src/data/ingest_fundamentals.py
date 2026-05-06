@@ -1,7 +1,7 @@
-"""Ingest fundamental data into the raw data layer."""
+"""Ingest fundamental data aligned to weekly portfolio decisions."""
 
 def main() -> None:
-    raise NotImplementedError('Implement fundamentals ingestion pipeline.')
+    raise NotImplementedError('Implement weekly fundamentals ingestion.')
 
 
 if __name__ == '__main__':

@@ -1,4 +1,4 @@
-"""Plotting utilities for backtest diagnostics."""
+"""Plotting utilities for ranking and RL allocation diagnostics."""
 
 def make_plots() -> None:
-    raise NotImplementedError('Implement backtest plots.')
+    raise NotImplementedError('Implement ranking and RL diagnostic plots.')

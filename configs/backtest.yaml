@@ -1,8 +1,14 @@
 rebalance_frequency: weekly
 cost_model: linear_turnover
 train_window: expanding
+reward_name: after_cost_return
+volatility_penalty: 0.0
+drawdown_penalty: 0.0
+execution_lag_periods: 1
 report_metrics:
   - annual_return
   - annual_volatility
   - sharpe
   - max_drawdown
+  - turnover
+  - cost_adjusted_return

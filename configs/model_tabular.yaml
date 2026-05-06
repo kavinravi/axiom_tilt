@@ -1,7 +1,10 @@
 model_type: lightgbm
 target: next_week_excess_return
 validation: walk_forward
+candidate_count: 30
 metrics:
   - spearman
   - rank_ic
   - decile_spread
+  - top_k_hit_rate
+  - top_k_stability

@@ -1,1 +1,1 @@
-"""Top-level package for the text-enhanced portfolio project."""
+"""Top-level package for the text-ranked, RL-allocated portfolio project."""

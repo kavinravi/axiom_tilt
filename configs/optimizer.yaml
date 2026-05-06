@@ -1,4 +1,7 @@
 long_only: true
+fully_invested: true
+projection_method: simplex
+candidate_count: 30
 max_stock_weight: 0.05
 max_sector_weight: 0.25
 max_turnover: 0.25

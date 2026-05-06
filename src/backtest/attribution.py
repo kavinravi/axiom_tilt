@@ -1,4 +1,4 @@
-"""Return attribution helpers for portfolio analysis."""
+"""Return attribution helpers for the rank-then-allocate pipeline."""
 
 def attribute_returns() -> None:
-    raise NotImplementedError('Implement attribution analysis.')
+    raise NotImplementedError('Implement pipeline attribution analysis.')

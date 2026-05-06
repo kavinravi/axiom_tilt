@@ -1,7 +1,7 @@
-"""Train a LightGBM stock scoring model."""
+"""Train a LightGBM ranker over the full stock universe."""
 
 def main() -> None:
-    raise NotImplementedError('Implement LightGBM training.')
+    raise NotImplementedError('Implement LightGBM ranking training.')
 
 
 if __name__ == '__main__':

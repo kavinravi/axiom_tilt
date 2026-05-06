@@ -1,7 +1,7 @@
-"""Ingest market price data into the raw data layer."""
+"""Ingest market data used for ranking, state, and reward computation."""
 
 def main() -> None:
-    raise NotImplementedError('Implement price ingestion pipeline.')
+    raise NotImplementedError('Implement weekly market data ingestion.')
 
 
 if __name__ == '__main__':

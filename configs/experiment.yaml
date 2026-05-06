@@ -1,4 +1,4 @@
-experiment_name: baseline_hybrid_portfolio
+experiment_name: text_rank_then_rl_allocate
 seed: 42
 tracking: local
 notes: Fill in run-specific overrides here.

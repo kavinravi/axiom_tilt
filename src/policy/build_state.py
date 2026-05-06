@@ -1,7 +1,7 @@
-"""Build policy state vectors from market and portfolio context."""
+"""Build RL state vectors from top-K candidates and portfolio context."""
 
 def main() -> None:
-    raise NotImplementedError('Implement state construction.')
+    raise NotImplementedError('Implement RL state construction.')
 
 
 if __name__ == '__main__':

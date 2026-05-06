@@ -8,8 +8,9 @@ tokenizers
 lightgbm
 xgboost
 scikit-learn
-contextualbandits
 d3rlpy
+gymnasium
+stable-baselines3
 cvxpy
 scipy
 empyrical

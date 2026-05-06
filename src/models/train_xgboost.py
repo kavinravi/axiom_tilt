@@ -1,7 +1,7 @@
-"""Train an XGBoost stock scoring model."""
+"""Train an XGBoost ranker over the full stock universe."""
 
 def main() -> None:
-    raise NotImplementedError('Implement XGBoost training.')
+    raise NotImplementedError('Implement XGBoost ranking training.')
 
 
 if __name__ == '__main__':

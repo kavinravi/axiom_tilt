@@ -1,4 +1,4 @@
-name: text-enhanced-portfolio-rl
+name: text-enhanced-rl-portfolio-allocation
 channels:
   - conda-forge
   - defaults
