@@ -1,23 +1,43 @@
-pandas
-numpy
-pyarrow
-torch
-transformers
-datasets
-tokenizers
-lightgbm
-xgboost
-scikit-learn
-d3rlpy
-gymnasium
-stable-baselines3
-cvxpy
-scipy
-empyrical
-matplotlib
-plotly
-pyyaml
-pytest
-ruff
-black
-pre-commit
+# Install: pip install -r requirements.txt
+# Targets RTX 5090 / Blackwell (sm_120). PyTorch cu128 wheels are pulled from the extra index below.
+--extra-index-url https://download.pytorch.org/whl/cu128
+
+# Core data
+numpy>=1.26
+pandas>=2.2
+pyarrow>=16
+
+# Deep learning + Hugging Face stack (Blackwell-compatible)
+torch>=2.7.0
+transformers>=4.46
+tokenizers>=0.20
+accelerate>=1.0
+datasets>=3.0
+
+# Tabular ML
+lightgbm>=4.5
+xgboost>=2.1
+scikit-learn>=1.5
+
+# RL
+d3rlpy>=2.6
+gymnasium>=1.0
+stable-baselines3>=2.4
+
+# Optimization / portfolio
+cvxpy>=1.5
+scipy>=1.13
+
+# Backtest / metrics
+empyrical>=0.5.5
+
+# Plotting
+matplotlib>=3.9
+plotly>=5.24
+
+# Tooling
+pyyaml>=6.0
+pytest>=8
+ruff>=0.6
+black>=24.8
+pre-commit>=3.8
