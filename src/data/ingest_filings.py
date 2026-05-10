@@ -16,6 +16,8 @@ from __future__ import annotations
 
 import argparse
 import re
+import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from io import StringIO
 from pathlib import Path
@@ -129,6 +131,15 @@ def _load_done(state_file: Path) -> set[str]:
 def _append_done(state_file: Path, accession: str) -> None:
     with state_file.open("a") as f:
         f.write(f"{accession}\n")
+
+
+_state_lock = threading.Lock()
+
+
+def _append_done_locked(state_file: Path, accession: str) -> None:
+    """Thread-safe wrapper around _append_done — serializes file writes."""
+    with _state_lock:
+        _append_done(state_file, accession)
 
 
 @dataclass
@@ -288,14 +299,26 @@ def main() -> None:
     todo = [f for f in filings if f.accession not in done]
     log.info("Already done: %d, To do: %d", len(done), len(todo))
 
+    n_workers = cfg["edgar"].get("workers", 6)
     n_ok = 0
-    for i, filing in enumerate(tqdm(todo, desc="filings")):
+
+    def _fetch_one(filing: EdgarFiling) -> tuple[str, bool]:
         ok = fetch_and_save_filing(client, filing)
         if ok:
-            n_ok += 1
-            _append_done(state_file, filing.accession)
-        if (i + 1) % cfg["edgar"]["checkpoint_every_n"] == 0:
-            log.info("checkpoint: %d/%d ok", n_ok, i + 1)
+            _append_done_locked(state_file, filing.accession)
+        return filing.accession, ok
+
+    with ThreadPoolExecutor(max_workers=n_workers) as pool:
+        futures = {pool.submit(_fetch_one, f): f for f in todo}
+        for i, fut in enumerate(tqdm(as_completed(futures), total=len(todo), desc="filings")):
+            try:
+                _, ok = fut.result()
+                if ok:
+                    n_ok += 1
+            except Exception as e:
+                log.warning("Worker exception: %s", e)
+            if (i + 1) % cfg["edgar"]["checkpoint_every_n"] == 0:
+                log.info("checkpoint: %d/%d ok", n_ok, i + 1)
 
     # Build / update the index parquet (load done set ONCE — not per filing)
     done = _load_done(state_file)

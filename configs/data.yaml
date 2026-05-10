@@ -27,6 +27,7 @@ edgar:
   retry_min_wait: 2
   retry_max_wait: 60
   checkpoint_every_n: 100     # flush state every N successful pulls
+  workers: 6                  # concurrent fetch threads (rate-limited by TokenBucket)
 
 # yfinance
 prices:
