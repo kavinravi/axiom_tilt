@@ -16,7 +16,7 @@ The project answers two sub-questions:
 
 ```
                                     ┌──────────────────────────┐
-financial docs ─► FinBERT ─► CLS ──►│ PCA-32  + agg over docs  │──┐
+financial docs ─► FinBERT ─► CLS ──►│ PCA + agg over docs      │──┐
                                     └──────────────────────────┘  │
                                               │                   │
                                               ▼                   ▼
@@ -158,9 +158,26 @@ For stock `i` on day `t`:
 
 ### 5.3 Dimensionality reduction
 
-- **PCA-32** fit on the aggregated stock-day embeddings from the training window only (no test-period leakage)
-- Re-fit PCA at each walk-forward retraining boundary
-- Output: 32 features per stock-day
+PCA dim is chosen by **cumulative-variance threshold**, not hardcoded.
+
+**Procedure (run once on the first walk's training window):**
+1. Default target: **99%** explained variance (sensitivity range: 95% / 98% / 99%).
+2. Fit a full PCA on aggregated stock-day embeddings from the first walk's training window only (no leakage).
+3. Find the smallest `n` such that cumulative explained variance ≥ target.
+4. Set the production PCA dim to **`n + 1`** (one-component safety buffer).
+5. Lock this `n_pca` for all subsequent walk-forward windows.
+
+**Walk-forward behavior:**
+- The dim `n_pca` is fixed after the first calibration so the ranker's input schema is stable across walks.
+- The PCA *components* (the actual fit) are re-estimated at each walk-forward boundary using only that window's training data.
+- This keeps the schema constant while still adapting the projection to new training data.
+
+**Diagnostic outputs to record:**
+- Cumulative explained variance curve from the first-walk fit
+- Chosen `n_pca` and the variance it captures
+- Per-walk: variance captured by the locked `n_pca` (sanity check that 99% target still holds in later windows)
+
+**Sanity check before locking:** if the chosen `n_pca` is so large it defeats the purpose of dim reduction (e.g., ≥ ~200 of 768), reconsider — review the scree / cum-var plot, lower the target (98% or 95%), or skip PCA and feed CLS through a different reducer. PCA only helps if the variance is genuinely concentrated.
 
 ### 5.4 Auxiliary text features (RL state inputs, also available to ranker)
 
@@ -193,7 +210,7 @@ All features standardized cross-sectionally per day (z-score within universe). M
 **LightGBM `LGBMRanker`** with `lambdarank` objective.
 
 Inputs:
-- 32 PCA text features
+- `n_pca` PCA text features (dim chosen via §5.3, locked after first walk)
 - ~25 structured features
 - 3 auxiliary text features (novelty, recency, doc-count)
 
@@ -312,14 +329,15 @@ The constraint layer is enforcement only; it does not re-optimize. RL retains de
 | EW-TopK | Equal-weight ranker top-30 |
 | Ranker + Static | Top-30 with momentum-tilt static weights (e.g., score-proportional) |
 | Ranker + MV | Top-30 with mean-variance optimizer (constrained, weekly re-est) |
-| No-Text Ranker + RL | Drop PCA-32 + 3 aux text features from ranker; rest identical |
+| No-Text Ranker + RL | Drop all PCA + 3 aux text features from ranker; rest identical |
 | Full Pipeline | Text + ranker + RL (this project) |
 
 ## 13. Ablations
 
 - **Text source:** EDGAR-only vs EDGAR + transcripts
 - **FinBERT FT:** pretrained vanilla vs continued-MLM-fine-tuned
-- **Text-feature variant:** PCA-32 vs (PCA-32 + MLP-head scalar) vs (none)
+- **Text-feature variant:** PCA (locked dim) vs (PCA + MLP-head scalar) vs (no text features)
+- **PCA variance target:** 95% vs 98% vs 99% (changes locked `n_pca`)
 - **Aux text features:** which of {novelty, recency, count} matter — drop one at a time
 - **K:** 20, 30, 40
 - **Cost level:** 2, 5, 10, 20 bps
@@ -364,7 +382,7 @@ docs/           # design specs, reports
 **First end-to-end pass should include:**
 1. EDGAR ingestion + price data
 2. FinBERT MLM continued pretraining on EDGAR
-3. PCA-32 of aggregated stock-day embeddings
+3. PCA of aggregated stock-day embeddings (dim chosen via cum-var threshold, see §5.3)
 4. 3 auxiliary text features
 5. Structured features (the full ~25)
 6. LightGBM ranker, single walk-forward window
@@ -372,6 +390,7 @@ docs/           # design specs, reports
 8. PPO RL on real-only trajectories (no bootstrap yet)
 9. Linear-cost backtest at 5 bps
 10. Baselines: EW-Universe, EW-TopK, Full Pipeline
+11. MVP-tier logging per §17 (W&B + parquet mirror) wired through every stage from day one
 
 **Deferred to v2:**
 - Earnings call transcripts
@@ -381,7 +400,71 @@ docs/           # design specs, reports
 - Reward-shaping ablations
 - Full multi-cost-level sensitivity
 
-## 17. Defaults Marked for User Review
+## 17. Logging & Diagnostics
+
+**Goal:** capture enough per-walk metrics that the project can later support a research paper — not just final backtest numbers, but how each stage behaves over time, where data drifts, and where stability breaks down.
+
+**Tooling:**
+- **Primary:** Weights & Biases (`wandb`). One run per `{stage, walk_id}`, grouped by experiment name. Wandb is already gitignored in this repo.
+- **Mirror dump:** all numeric metrics also written to `reports/metrics/{stage}_{walk}.parquet` for paper-ready plotting independent of the tracker (and so a future "I lost my W&B account" doesn't lose data).
+- MLflow is acceptable as a fallback if the user later prefers it; pick one and stick with it.
+
+### 17.1 FinBERT MLM
+- Per epoch: train loss, validation perplexity, learning rate, gradient norm
+- Final model perplexity and delta vs base-model perplexity on a held-out financial-text sample
+- (If FinBERT is re-FT'd at each walk:) final perplexity per walk and delta vs prior walk
+
+### 17.2 PCA / text features
+- **Cumulative-variance curve** (all 768 components) per walk — the raw signal you flagged interest in
+- Variance captured by the locked `n_pca` per walk (sanity check that the 99% target still holds in later windows)
+- Top-N PCA loadings per walk (qualitative interpretability — what dimensions dominate)
+- **Subspace stability:** cosine similarity between top-`k` PCA components of walk `w` vs walk `1` (drift indicator — is the "topic geometry" of financial text changing over time?)
+- Distribution stats of aux text features (novelty / recency / doc-count) per walk
+
+### 17.3 LightGBM ranker
+- Training: lambdarank loss curve, NDCG@K on validation
+- OOS per walk: **rank IC**, IC mean, IC information ratio, decile spread, hit rate, top-K Jaccard stability between consecutive weeks
+- **Feature importance per walk** (both gain-based and SHAP) — track top-N ranking over time
+- Calibration plot: predicted-score quantile buckets vs realized return
+- Best HPs from initial tune (logged once, reused across walks)
+
+### 17.4 RL (PPO)
+- Episode-level: raw return, after-cost return, reward decomposed into components (return, cost, vol penalty, dd penalty)
+- Policy stats: entropy, KL divergence vs previous policy, value-function loss, gradient norm
+- Action stats: max weight, weight-concentration Herfindahl index, per-step turnover, holdings count
+- Per walk: final-policy snapshot — median weights over the walk, sector exposures, weight correlation across rebalance dates
+
+### 17.5 Backtest
+- Per-walk OOS: annualized return, vol, Sharpe, Sortino, Calmar, max drawdown, turnover, average holdings count
+- Gross vs net return decomposition (cost attribution)
+- Equity curve per walk and concatenated full-period
+- Weekly hit rate, winning-weeks ratio
+
+### 17.6 Regime / data-drift (paper-ready context)
+- Universe size per walk
+- Document volume per walk (filings + transcripts) — text-data density over time
+- Market-regime indicators per walk: VIX mean, term spread, market return, dispersion
+- Cross-sectional stock-return vol per walk
+- **Cross-walk stability composites:** PCA subspace cosine, ranker feature-importance Spearman, RL policy weight correlation
+
+### MVP vs v2 split for logging
+
+**MVP (in v1):**
+- §17.1 in full
+- §17.2 cum-var curve + locked-`n_pca` variance check (skip subspace stability)
+- §17.3 loss + IC + decile spread + hit rate (skip SHAP and importance drift)
+- §17.4 reward components + entropy + turnover (skip policy snapshots)
+- §17.5 in full
+
+**v2 (research-paper extras):**
+- §17.2 subspace stability
+- §17.3 SHAP and feature-importance drift over walks
+- §17.4 policy snapshots
+- §17.6 regime indicators and cross-walk stability composites
+
+This split keeps the MVP runnable without spending a week on instrumentation, while reserving the rich research-paper diagnostics for a clearly bounded second pass.
+
+## 18. Defaults Marked for User Review
 
 These are sensible defaults but not load-bearing — user should flag if they want different values:
 
@@ -392,10 +475,10 @@ These are sensible defaults but not load-bearing — user should flag if they wa
 - Linear cost: 5 bps
 - Max weight: 10%, turnover cap: 30%
 - PPO as RL algo
-- PCA dim: 32
+- PCA variance target: 99% (then `n_pca = n + 1`, locked after first walk; see §5.3). Alternative considered: re-pick `n_pca` per walk — rejected for schema-stability reasons but available as an ablation if the user wants it.
 - Text aggregation half-life: 14 days
 - Reward weights: cost 1.0, vol 0.1, dd 0.1
 
-## 18. Open Decisions
+## 19. Open Decisions
 
 None blocking the implementation plan. The above is a complete spec; ablations and v2 work expand it.
