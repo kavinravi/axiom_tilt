@@ -14,4 +14,11 @@ reports/tables/
 wandb/
 mlruns/
 .env
+
+# Bulk data (regeneratable from sources + code; too large for git)
+# data/processed/ stays tracked — it's the small, useful artifact for laptop sync
+data/raw/
+data/interim/
+data/embeddings/
+
 *.log
