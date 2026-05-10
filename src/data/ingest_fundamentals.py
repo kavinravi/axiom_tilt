@@ -66,8 +66,12 @@ class FmpClient:
             self.bucket.acquire()
             resp = requests.get(url, params=params, timeout=30)
             if resp.status_code == 429:
-                raise requests.RequestException(f"rate limited: {resp.text[:200]}")
-            resp.raise_for_status()
+                raise requests.RequestException(f"rate limited (429)")
+            if not resp.ok:
+                # Construct error message WITHOUT the URL (would leak api_key in query string)
+                raise requests.HTTPError(
+                    f"{resp.status_code} {resp.reason} for {endpoint}/{ticker}"
+                )
             data = resp.json()
             if isinstance(data, dict) and "Error Message" in data:
                 # Treat as empty rather than raising; some tickers have no data

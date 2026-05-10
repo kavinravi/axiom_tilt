@@ -1398,6 +1398,8 @@ and update later readers.
 
 ## Task 3: Fundamentals via FMP
 
+> **⚠️ DEFERRED (2026-05-10):** the implementation in this section was written against FMP's `/api/v3/{income,balance,cashflow}-statement/{ticker}` endpoints, which FMP **deprecated on 2025-08-31**. New keys receive `403 Legacy Endpoint`. The code in `src/data/ingest_fundamentals.py` runs but every call fails. See **§3.3 of the design spec** for the three resolution options (migrate to FMP stable endpoints, upgrade tier, or switch to AlphaVantage). Pick a path before this is needed for ranker training.
+
 FMP gives standardized quarterly statements. Free tier is rate-limited (~250 req/day on the truly-free tier; more on the cheap paid tier). The puller is per-ticker and resumable so an interrupted run picks up where it left off.
 
 **Files:**
