@@ -35,6 +35,16 @@ empyrical>=0.5.5
 matplotlib>=3.9
 plotly>=5.24
 
+# Data ingestion
+requests>=2.32
+beautifulsoup4>=4.12
+lxml>=5.2
+tenacity>=8.5
+python-dotenv>=1.0
+yfinance>=0.2.40
+pandas-datareader>=0.10
+tqdm>=4.66
+
 # Tooling
 pyyaml>=6.0
 pytest>=8
