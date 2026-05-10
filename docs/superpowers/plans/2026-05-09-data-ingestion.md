@@ -1910,7 +1910,7 @@ class EdgarFiling:
 
     @property
     def url(self) -> str:
-        return f"{SEC_BASE}/{self.filename}"
+        return f"{SEC_BASE}/Archives/{self.filename}"
 
     @property
     def local_text_path(self) -> Path:
@@ -2006,8 +2006,12 @@ class EdgarClient:
         def _do() -> bytes:
             self.bucket.acquire()
             resp = requests.get(url, headers=self._headers(), timeout=60)
-            if resp.status_code in (429, 503):
-                raise requests.RequestException(f"throttled: {resp.status_code}")
+            # Retry only on transient codes (rate limit + gateway errors)
+            if resp.status_code in (429, 502, 503, 504):
+                raise requests.RequestException(f"transient {resp.status_code}")
+            # 4xx client errors are terminal — raise non-retryable to short-circuit tenacity
+            if 400 <= resp.status_code < 500:
+                raise FileNotFoundError(f"{resp.status_code} for {url}")
             resp.raise_for_status()
             return resp.content
         return _do()
