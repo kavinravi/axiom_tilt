@@ -66,3 +66,4 @@ def test_edgar_filing_dataclass():
     )
     assert f.url.startswith("https://www.sec.gov/")
     assert f.local_text_path.name.endswith(".txt")
+    assert f.local_raw_path.name == "0000320193-24-000123.htm"

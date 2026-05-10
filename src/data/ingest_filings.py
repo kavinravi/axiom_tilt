@@ -62,6 +62,14 @@ class EdgarFiling:
     def local_text_path(self) -> Path:
         return edgar_raw_dir() / self.cik / f"{self.accession}.txt"
 
+    @property
+    def local_raw_path(self) -> Path:
+        """Path where the raw SGML envelope or HTML is stored on disk."""
+        # Preserve original extension (.txt or .htm) so downstream parsing
+        # can dispatch correctly without re-querying SEC.
+        suffix = Path(self.filename).suffix or ".txt"
+        return edgar_raw_dir() / self.cik / f"{self.accession}{suffix}"
+
 
 def parse_master_idx(text: str) -> pd.DataFrame:
     """Parse SEC's master.idx (pipe-delimited after a header)."""
@@ -216,8 +224,13 @@ def collect_filings_for_universe(
 
 
 def fetch_and_save_filing(client: EdgarClient, filing: EdgarFiling) -> bool:
-    """Fetch the filing, extract text, save to disk. Returns True on success."""
-    out_path = filing.local_text_path
+    """Fetch the filing, save raw bytes to disk. Returns True on success.
+
+    Text extraction (HTML/SGML stripping) happens later in a separate notebook
+    so the fetch step stays network-bound and parallelizes well. The raw SGML
+    envelope is preserved so we can re-extract with different strategies later.
+    """
+    out_path = filing.local_raw_path
     if out_path.exists():
         return True
     try:
@@ -226,16 +239,8 @@ def fetch_and_save_filing(client: EdgarClient, filing: EdgarFiling) -> bool:
         log.warning("Fetch failed %s: %s", filing.url, e)
         return False
 
-    # If filename is `.txt`, the file is the SGML envelope — extract <DOCUMENT>...</DOCUMENT> bodies
-    # If it's `.htm`/`.html`, parse directly
-    raw_str = raw.decode("utf-8", errors="ignore")
-    if filing.filename.endswith(".txt"):
-        text = extract_text_from_sgml(raw_str)
-    else:
-        text = extract_text_from_html(raw_str)
-
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    out_path.write_text(text, encoding="utf-8")
+    out_path.write_bytes(raw)
     return True
 
 
@@ -331,7 +336,8 @@ def main() -> None:
             "filing_date": f.filing_date,
             "accession": f.accession,
             "filename": f.filename,
-            "local_path": str(f.local_text_path.relative_to(data_root)),
+            "raw_path": str(f.local_raw_path.relative_to(data_root)),
+            "text_path": str(f.local_text_path.relative_to(data_root)),
         }
         for f in filings
         if f.accession in done
