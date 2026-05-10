@@ -3,9 +3,50 @@ universe_size: 400
 frequency: weekly
 holding_period: 1w
 document_frequency: weekly
-text_sources:
-  - filings
-  - transcripts
+
+# Date range — trims everything we ingest
+start_date: "2000-01-01"
+end_date: "2025-12-31"
+
+# Storage roots (relative to repo root)
 raw_data_dir: data/raw
 interim_data_dir: data/interim
 processed_data_dir: data/processed
+state_dir: data/state
+
+# Text sources to pull in v1 (transcripts deferred to v2 per spec §16)
+text_sources:
+  - filings
+
+# EDGAR
+edgar:
+  form_types: ["10-K", "10-Q", "8-K"]
+  rate_per_sec: 8.0           # SEC limit is 10/s; leave 20% headroom
+  capacity: 8
+  retry_attempts: 5
+  retry_min_wait: 2
+  retry_max_wait: 60
+  checkpoint_every_n: 100     # flush state every N successful pulls
+
+# yfinance
+prices:
+  batch_size: 50              # tickers per yfinance.download call
+  request_delay_sec: 0.5      # polite delay between batches
+
+# FMP
+fundamentals:
+  rate_per_sec: 5.0           # FMP free tier; paid tier higher
+  capacity: 5
+  retry_attempts: 3
+  endpoints:
+    - income-statement
+    - balance-sheet-statement
+    - cash-flow-statement
+
+# FRED macro series (no API key required via pandas-datareader)
+macro:
+  series:
+    - DGS3MO   # 3-month T-bill (risk-free)
+    - DGS10    # 10-year Treasury (term spread component)
+    - VIXCLS   # VIX
+    - T10Y2Y   # 10y-2y spread
