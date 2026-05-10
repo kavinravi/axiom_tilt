@@ -1723,13 +1723,30 @@ The big one. Pulls 10-K, 10-Q, 8-K filings for every CIK in our universe across 
 
 ### Task 4.1: Capture EDGAR test fixtures
 
-- [ ] **Step 1: Save a small SEC quarterly master.idx**
+- [ ] **Step 1: Save a sliced SEC quarterly master.idx**
 
-Run:
+The full quarterly index is ~30 MB which is too large for git. Fetch and slice down to ~5K rows preserving header + form-type diversity:
+
 ```bash
+mkdir -p tests/fixtures
 curl -A "axiom-tilt-research test@example.com" \
-  -o tests/fixtures/edgar_master.idx \
+  -o /tmp/edgar_master_full.idx \
   https://www.sec.gov/Archives/edgar/full-index/2024/QTR1/master.idx
+
+python - <<'PY'
+from pathlib import Path
+src = Path("/tmp/edgar_master_full.idx").read_text(encoding="latin-1").splitlines()
+# Find dashes line that ends the header
+header_end = next(i for i, line in enumerate(src) if line.startswith("---")) + 1
+header = src[:header_end]
+body = src[header_end:]
+# Keep first ~5000 rows of body (preserves form-type diversity at the start of Q1)
+sliced = header + body[:5000]
+Path("tests/fixtures/edgar_master.idx").write_text("\n".join(sliced), encoding="latin-1")
+PY
+
+rm /tmp/edgar_master_full.idx
+ls -lh tests/fixtures/edgar_master.idx  # should be < 1 MB
 ```
 
 Verify: `head -20 tests/fixtures/edgar_master.idx` should show pipe-delimited rows like `CIK|Company Name|Form Type|Date Filed|Filename`.
@@ -2069,7 +2086,7 @@ def extract_text_from_sgml(sgml: str) -> str:
     Concatenate the text from each <TEXT> body, after HTML stripping.
     """
     bodies: list[str] = []
-    for match in re.finditer(r"<TEXT>(.*?)</TEXT>", sgml, flags=re.DOTALL | re.IGNORECASE):
+    for match in re.finditer(r"<TEXT[^>]*>(.*?)</TEXT>", sgml, flags=re.DOTALL | re.IGNORECASE):
         body = match.group(1)
         bodies.append(extract_text_from_html(body))
     if not bodies:
@@ -2132,19 +2149,22 @@ def main() -> None:
         if (i + 1) % cfg["edgar"]["checkpoint_every_n"] == 0:
             log.info("checkpoint: %d/%d ok", n_ok, i + 1)
 
-    # Build / update the index parquet
-    index_rows = []
-    for f in filings:
-        if (state_dir() / "edgar_done.txt").exists() and f.accession in _load_done(state_file):
-            index_rows.append({
-                "cik": f.cik,
-                "company": f.company,
-                "form_type": f.form_type,
-                "filing_date": f.filing_date,
-                "accession": f.accession,
-                "filename": f.filename,
-                "local_path": str(f.local_text_path.relative_to(raw_dir().parent)),
-            })
+    # Build / update the index parquet (load done set ONCE — not per filing)
+    done = _load_done(state_file)
+    data_root = raw_dir().parent
+    index_rows = [
+        {
+            "cik": f.cik,
+            "company": f.company,
+            "form_type": f.form_type,
+            "filing_date": f.filing_date,
+            "accession": f.accession,
+            "filename": f.filename,
+            "local_path": str(f.local_text_path.relative_to(data_root)),
+        }
+        for f in filings
+        if f.accession in done
+    ]
     idx_df = pd.DataFrame(index_rows)
     idx_df.to_parquet(processed_dir() / "edgar_index.parquet", index=False)
     log.info("Wrote edgar_index with %d rows", len(idx_df))
