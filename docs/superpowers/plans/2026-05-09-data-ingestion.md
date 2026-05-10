@@ -2341,10 +2341,10 @@ log = get_logger(__name__)
 
 def normalize_fred_frame(wide: pd.DataFrame) -> pd.DataFrame:
     """Convert FRED's wide-format frame to long (date, series, value)."""
-    long = wide.reset_index().melt(id_vars=wide.index.name or "DATE",
-                                    var_name="series",
-                                    value_name="value")
-    long = long.rename(columns={(wide.index.name or "DATE"): "date"})
+    reset = wide.reset_index()
+    date_col = reset.columns[0]
+    long = reset.melt(id_vars=date_col, var_name="series", value_name="value")
+    long = long.rename(columns={date_col: "date"})
     long["date"] = pd.to_datetime(long["date"]).dt.tz_localize(None).dt.normalize()
     return long.dropna(subset=["value"]).reset_index(drop=True)
 
