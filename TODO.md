@@ -21,17 +21,20 @@
 | 1 | Universe reconstruction (Wikipedia S&P 500 + SEC ticker→CIK) | ✅ done | 884 intervals, 858 tickers, 73% CIK match. `data/processed/universe.parquet` |
 | 2 | Prices via yfinance (daily OHLCV adjusted) | ✅ done | 3.6M rows, 670 tickers, 2000–2025. `data/processed/prices.parquet` |
 | 3 | Fundamentals via FMP | ⛔ **deferred** | FMP deprecated v3 endpoints on 2025-08-31. See "Action items" below |
-| 4 | EDGAR text (10-K/10-Q/8-K) | 🟡 running overnight | See "Currently running" below |
+| 4 | EDGAR text (10-K/10-Q/8-K) | ✅ done | 226,919 filings, 614 CIKs, 746 GB raw on disk. `data/processed/edgar_index.parquet`. Finished 2026-05-10 08:39 in ~8 hrs |
 | 5 | Macro via FRED (DGS3MO, DGS10, VIXCLS, T10Y2Y) | ✅ done | 26K rows × 4 series. `data/processed/macro.parquet` |
-| 6 | Cross-coverage integration audit | ⏳ pending | Run after EDGAR finishes (plan §6.1) |
+| 6 | Cross-coverage integration audit | ✅ done | See `docs/audits/2026-05-10-data-coverage.md`. EDGAR ≥90% PASS; **prices 78% BELOW 95% threshold** (yfinance gap on delisted names → survivorship bias) |
 
 ## Currently running
 
-**EDGAR full-history pull** (launched 2026-05-10 ~00:40):
-- Process: PID was in `logs/edgar.pid` (check with `cat logs/edgar.pid`); kill with `kill $(cat logs/edgar.pid)`
-- Log: `logs/edgar_full_*.log` (latest)
-- Mode: 6 worker threads, 8 req/sec rate limit, observed ~5/sec sustained
-- ETA: ~30–35 hours total (~600K filings × 25 years)
+Nothing. EDGAR pull completed at 2026-05-10 08:39:00 (started ~00:40, ~8 hours total). Final log line: `Wrote edgar_index with 226919 rows`. See historical context below if launching a re-pull is ever needed.
+
+### Historical: EDGAR launch context (kept for re-pull if needed)
+- Mode: 6 worker threads, 8 req/sec rate limit, observed ~7/sec sustained
+- Filings: 226,919 (8-K: 174,404 / 10-Q: 39,761 / 10-K: 12,754)
+- Final disk: 746 GB raw SGML envelopes under `data/raw/edgar/{cik}/{accession}.{txt,htm}` (gitignored)
+- Resume mechanism: `data/state/edgar_done.txt` tracked completed accessions
+- To re-run: `nohup python -m src.data.ingest_filings > logs/edgar_full_$(date +%Y%m%d_%H%M%S).log 2>&1 &`
 - Storage: `data/raw/edgar/{cik}/{accession}.{txt,htm}` — gitignored bulk SGML envelopes
 - Resume: `data/state/edgar_done.txt` tracks completed accessions; safe to interrupt
 
@@ -77,8 +80,15 @@ FMP's v3 statement endpoints (income/balance/cashflow) returned `403 Legacy Endp
 
 This blocks the structured features that include valuation/profitability/leverage. Until resolved, the ranker can only run on text features + price-derived features. **Pick a path before starting ranker training.**
 
-### 3. Cross-coverage audit (Task 6)
-Once EDGAR finishes, run the audit from plan §6.1:
+### 3. Survivorship bias in prices (NEW, from audit)
+Audit found prices coverage at **78.1%** vs 95% target. The 188 missing tickers are almost all delisted historical S&P 500 members (ABK, AGN, APC, ALXN, etc.) that yfinance silently drops. **Backtest results on this dataset will be optimistically biased.** Two fixes (in `docs/audits/2026-05-10-data-coverage.md`):
+1. Swap yfinance → Polygon ($29/mo Stocks Starter) or CRSP via WRDS for survivorship-clean prices
+2. Backfill historical CIKs from `https://www.sec.gov/Archives/edgar/cik-lookup-data.txt` to map the 237 unmapped tickers in the universe
+
+For research-paper grade results, fix #1 is necessary. For v1 development you can proceed with the bias and document it.
+
+### 4. Re-running the audit
+The cross-coverage audit at `docs/audits/2026-05-10-data-coverage.md` ends with a one-liner that reproduces the coverage numbers — useful when re-checking after fixes:
 ```bash
 python -c "
 import pandas as pd
