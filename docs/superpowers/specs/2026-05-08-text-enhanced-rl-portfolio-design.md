@@ -83,6 +83,14 @@ For FinBERT MLM continued pretraining, EDGAR alone gives billions of tokens — 
 - **Fundamentals:** Quarterly Compustat-style fields. SimFin or yfinance fundamentals as a fallback.
 - **Risk-free rate:** FRED (`DGS3MO`) for cost-of-cash and Sharpe denominator.
 
+> **⚠️ Fundamentals ingestion is currently deferred (2026-05-10).** The first attempt used FMP's `/api/v3/{income,balance,cashflow}-statement/{ticker}` endpoints, which FMP deprecated on **2025-08-31**. Keys created after that date receive `403 Legacy Endpoint` errors. To unblock, pick one path before structured features are needed for the ranker:
+>
+> 1. **Migrate to FMP's current API** (likely `/stable/income-statement?symbol=...`). Requires re-reading [FMP docs](https://site.financialmodelingprep.com/developer/docs) and rewriting the client + tests in `src/data/ingest_fundamentals.py`. Free tier still has request caps (~250/day) — fine for development, slow for full universe.
+> 2. **Upgrade to FMP Starter ($14/mo)** if it grandfathers the v3 endpoints, or to a higher tier covering the new endpoints with no per-day cap. Cheapest path if existing code keeps working with a tier change.
+> 3. **Switch fundamentals provider to Alpha Vantage** (`OVERVIEW`, `INCOME_STATEMENT`, `BALANCE_SHEET`, `CASH_FLOW`). Free tier is 25 req/day — too tight for full universe; premium tier ($50/mo) is closer to FMP Starter pricing. Code rewrite required.
+>
+> Until this is resolved, the ranker will run on text features + price-derived features only (no valuation/profitability/leverage signals from fundamentals).
+
 ### 3.4 Directory layout
 
 ```
