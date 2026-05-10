@@ -8,6 +8,7 @@ data/state/fundamentals_done.txt — append-only list of completed tickers.
 """
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
@@ -141,7 +142,7 @@ def main() -> None:
                 rows = client.fetch(stmt.value, ticker, period="quarter", limit=200)
                 # Persist raw response for debugging
                 (raw_root / f"{ticker}_{stmt.name.lower()}.json").write_text(
-                    pd.io.json.dumps(rows)
+                    json.dumps(rows)
                 )
                 df = parse_fmp_statement(rows, ticker, stmt)
                 if not df.empty:
