@@ -1,0 +1,28 @@
+<SEC-DOCUMENT>0000123456-24-000001.txt : 20240101
+<SEC-HEADER>0000123456-24-000001.hdr.sgml : 20240101
+ACCESSION NUMBER: 0000123456-24-000001
+CONFORMED SUBMISSION TYPE: 10-K
+</SEC-HEADER>
+<DOCUMENT>
+<TYPE>10-K
+<TEXT>
+<html><body>
+<p>This is the <b>primary</b> document body.</p>
+<p>It contains some &amp; HTML entities and normal text.</p>
+<p>Item 1A. Risk Factors. We face various risks including market risk, credit risk, and operational risk.</p>
+<p>The company reported revenue of $1.2 billion in fiscal year 2024.</p>
+<p>Management discussion and analysis follows.</p>
+<p>This text needs to be at least 500 characters long to pass the minimum length filter in the cleaner. Adding more filler content to ensure we exceed the threshold for a realistic test case that mirrors what real SEC filings contain. The 10-K form is comprehensive and includes financial statements, footnotes, risk factors, and management discussion. End of body.</p>
+</body></html>
+</TEXT>
+</DOCUMENT>
+<DOCUMENT>
+<TYPE>EX-99.1
+<TEXT TYPE="EX-99.1">
+<html><body>
+<p>Exhibit 99.1 - Earnings Release</p>
+<p>Short exhibit body.</p>
+</body></html>
+</TEXT>
+</DOCUMENT>
+</SEC-DOCUMENT>
