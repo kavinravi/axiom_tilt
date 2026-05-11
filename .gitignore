@@ -23,5 +23,6 @@ mlruns/
 data/raw/
 data/interim/
 data/embeddings/
+data/processed/finbert_tok/
 
 *.log

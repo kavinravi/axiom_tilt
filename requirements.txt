@@ -45,6 +45,10 @@ yfinance>=0.2.40
 pandas-datareader>=0.10
 tqdm>=4.66
 
+# Notebook tooling
+nbformat>=5.10
+jupyter>=1.0
+
 # Tooling
 pyyaml>=6.0
 pytest>=8
