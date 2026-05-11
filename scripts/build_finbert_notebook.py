@@ -355,7 +355,7 @@ print("Callback class defined.")
 E_TENSORBOARD = '''# Optional: TensorBoard sidecar for streaming metrics (separate UI in Cursor)
 # Comment out if you prefer to keep the notebook output as the sole monitor.
 %load_ext tensorboard
-%tensorboard --logdir {ARTIFACTS_DIR}/runs --port 6006
+%tensorboard --logdir artifacts/finbert-mlm/runs --port 6006
 '''
 
 E_FULL_TRAIN = '''timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
