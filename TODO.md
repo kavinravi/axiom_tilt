@@ -107,31 +107,67 @@ print(f'Macro: {macro[\"series\"].nunique()} series, {macro[\"date\"].min().date
 ```
 Expected coverage thresholds: prices ≥95%, EDGAR ≥90% of universe CIKs.
 
-## Next phase — model work
+## Tomorrow's execution order (FinBERT FT)
 
-**STOP after the audit and check in with the user before starting any model code.** They explicitly said:
-- Notebooks (`.ipynb`) for all model/training/eval code, NOT `.py` modules. `notebooks/` directory exists with `.gitkeep` — empty, ready for content.
-- They want to verify a "machine-learning" skill is loaded before model work begins (not currently visible — may be a plugin issue or skill-name confusion; ask them to confirm what skill they meant).
+A Cursor IDE agent should execute these steps in sequence while the user is at class:
 
-**Roadmap from the spec:**
+### Step 1: Run Phase 1 (text extraction) — CLI, ~6 hr
+```bash
+python -m src.data.clean_filings
+```
+- Multiprocessing-based; uses `cpu_count - 2` workers by default.
+- Output: `data/interim/edgar_text/{cik}/{accession}.txt` (~30-50 GB total)
+- Per-file resume; safe to interrupt and re-run.
 
-1. **Text post-processing notebook** — extract clean text from `data/raw/edgar/*` SGML envelopes. Hooks already exist (`extract_text_from_sgml`, `extract_text_from_html` in `src/data/ingest_filings.py`). Output to `data/interim/edgar_text/{cik}/{accession}.txt`.
+### Step 2: Open the notebook in Cursor and execute Sections A–D
+- `notebooks/01_finbert_finetune.ipynb`
+- Section A: setup, GPU check (expects RTX 5090 + bf16)
+- Section B: verify ≥200K cleaned files from Step 1
+- Section C: tokenize (~30-60 min) → `data/processed/finbert_tok/`
+- Section D: 50-step dry run (~2 min). **GATE: confirm loss is finite and trending down BEFORE proceeding to Section E.** If OOM: bump grad-accum to 2, drop batch to 32.
 
-2. **FinBERT MLM continued pretraining** (spec §4) — full fine-tune (no LoRA), bf16, batch 64×512, 1–3 epochs, target 1B+ tokens of EDGAR. Hardware target: RTX 5090 Blackwell (`requirements.txt` already pinned for cu128).
+### Step 3: Run Section E (full training, ~36-48 hr)
+- One long cell.
+- TensorBoard sidecar at port 6006 streams live metrics.
+- The `CursorSafeProgressCallback` mirrors logs to `logs/finbert_finetune_<timestamp>.log` and keeps notebook output bounded.
 
-3. **Text feature engineering** (spec §5) — document embeddings → exponentially-decay-weighted stock-day aggregation (14-day half-life) → PCA dim selected via 99% cumulative-variance threshold on the first walk's training window, then locked.
+### Step 4: Run Section F (eval + save)
+- Saves encoder + tokenizer to `artifacts/finbert-mlm/`
+- Saves train/val curves to `reports/metrics/finbert_finetune.parquet`
+- Saves summary JSON to `reports/metrics/finbert_finetune_summary.json`
 
-4. **Structured features** (spec §6) — momentum, vol, beta, liquidity, etc. (≈25 features). **Note: valuation/profitability/leverage features depend on fundamentals — see Action item #2.**
+### Recovery
+- Training crash: `trainer.train(resume_from_checkpoint=True)` resumes from latest checkpoint
+- OOM at full training: drop `per_device_train_batch_size=32` + `gradient_accumulation_steps=2`
+- HF Hub unreachable: notebook auto-falls back to `bert-base-uncased`
 
-5. **LightGBM ranker** (spec §7) — `lambdarank` over text-PCA + structured + 3 aux text scalars. Walk-forward expanding window starting 2002.
+### Validation gates (Section F outputs to look for)
+- `artifacts/finbert-mlm/config.json` exists
+- `artifacts/finbert-mlm/model.safetensors` (or `pytorch_model.bin`) exists
+- `reports/metrics/finbert_finetune.parquet` exists and loads
+- Val perplexity printed in Section F is finite and lower than initial random-init
 
-6. **Top-K selection** (spec §8) — K=30, ADV ≥ $5M, price ≥ $5.
+## Next phase — after FinBERT FT completes
 
-7. **PPO RL allocator** (spec §9) — ~880-dim state, continuous target weights over top-30, after-cost reward.
+**STOP and confirm with the user before starting the next phase.**
 
-8. **Constraint layer + backtest** (spec §10–11) — softmax→clip→renorm→turnover cap→ADV cap; 5 bps linear cost; weekly Friday close → Monday open execution.
+**Roadmap from the spec (post-FinBERT):**
 
-9. **Per-walk logging & diagnostics** (spec §17) — W&B as primary, parquet mirror for paper-ready plots. MVP-tier vs v2 split is in the spec.
+1. **Embedding generation notebook** — `notebooks/02_finbert_embed.ipynb` (not yet built). Sliding-window inference using the FT'd encoder over each cleaned filing; emit `[CLS]` per chunk → mean-pool to document embedding → stock-day aggregation per spec §5.2 (exponentially-decay-weighted mean, 14-day half-life).
+
+2. **Text feature engineering** (spec §5) — PCA dim selected via 99% cumulative-variance threshold on the first walk's training window, then locked. Plus 3 aux scalars: text novelty, days-since-filing, doc-count.
+
+3. **Structured features** (spec §6) — momentum, vol, beta, liquidity, etc. (≈25 features). **Note: valuation/profitability/leverage features depend on fundamentals — currently deferred (FMP v3 endpoints deprecated; WRDS Compustat awaiting school approval).**
+
+4. **LightGBM ranker** (spec §7) — `lambdarank` over text-PCA + structured + 3 aux text scalars. Walk-forward expanding window starting 2002.
+
+5. **Top-K selection** (spec §8) — K=30, ADV ≥ $5M, price ≥ $5.
+
+6. **PPO RL allocator** (spec §9) — ~880-dim state, continuous target weights over top-30, after-cost reward.
+
+7. **Constraint layer + backtest** (spec §10–11) — softmax→clip→renorm→turnover cap→ADV cap; 5 bps linear cost; weekly Friday close → Monday open execution.
+
+8. **Per-walk logging & diagnostics** (spec §17) — W&B as primary, parquet mirror for paper-ready plots. MVP-tier vs v2 split is in the spec.
 
 ## Key user preferences (NON-NEGOTIABLE)
 
