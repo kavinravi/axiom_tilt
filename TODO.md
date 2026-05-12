@@ -111,13 +111,19 @@ Expected coverage thresholds: prices ≥95%, EDGAR ≥90% of universe CIKs.
 
 A Cursor IDE agent should execute these steps in sequence while the user is at class:
 
-### Step 1: Run Phase 1 (text extraction) — CLI, ~6 hr
+### Step 1: Run Phase 1 (text extraction) — CLI ✅ DONE 2026-05-11
 ```bash
-python -m src.data.clean_filings
+python -m src.data.clean_filings --workers 16
 ```
-- Multiprocessing-based; uses `cpu_count - 2` workers by default.
-- Output: `data/interim/edgar_text/{cik}/{accession}.txt` (~30-50 GB total)
+- Multiprocessing-based; **prefer `--workers 16`** on the 9950X (16 physical cores).
+  Default `cpu_count - 2` = 30 oversubscribes SMT and contends on single-disk I/O.
+- Measured: 21 min wall time for 226,919 filings → 221,844 written, 5,075 skipped
+  (too-short or below MIN_TEXT_LENGTH=500).
+- Output: `data/interim/edgar_text/{cik}/{accession}.txt` — 103 GB total (~14% of raw).
 - Per-file resume; safe to interrupt and re-run.
+- Quality caveat: output retains XBRL namespace residue (`iso4217:USD xbrli:shares`)
+  and financial-table number dumps in some files. Probably fine for MLM but worth
+  spot-checking before training; add a post-filter if noise dominates the corpus.
 
 ### Step 2: Open the notebook in Cursor and execute Sections A–D
 - `notebooks/01_finbert_finetune.ipynb`

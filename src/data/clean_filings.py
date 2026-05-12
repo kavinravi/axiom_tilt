@@ -5,7 +5,8 @@ data/raw/edgar/{cik}/{accession}.{txt,htm}, extracts <TEXT>...</TEXT> bodies,
 strips HTML tags, collapses whitespace, and writes plain text to
 data/interim/edgar_text/{cik}/{accession}.txt.
 
-Parallelized via multiprocessing for speed (~6 hr on 16 cores for 226K filings).
+Parallelized via multiprocessing for speed (measured: 21 min on 16 workers
+for 226,919 filings / 746 GB raw, AMD Ryzen 9 9950X + SSD).
 Per-file resume: skips already-extracted output files.
 
 Run via:
