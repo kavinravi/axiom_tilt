@@ -48,7 +48,8 @@ tqdm>=4.66
 wrds>=3.2
 psycopg2-binary>=2.9
 # Sharadar SF1 via Nasdaq Data Link — primary fundamentals source (PIT, 1998+)
-nasdaqdatalink>=1.0
+# NOTE: PyPI distribution is "Nasdaq-Data-Link"; the import name is "nasdaqdatalink".
+Nasdaq-Data-Link>=1.0
 # DuckDB for SQL queries against parquet
 duckdb>=1.1
 
