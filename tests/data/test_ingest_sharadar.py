@@ -15,14 +15,24 @@ from src.data.ingest_sharadar import (
 )
 
 
+def _secfilings_url(cik: int) -> str:
+    return f"https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK={cik:010d}"
+
+
 def _sample_tickers() -> pd.DataFrame:
+    # SHARADAR/TICKERS has no standalone `cik` column — CIK is embedded in the
+    # secfilings EDGAR URL, which is what the module parses.
     return pd.DataFrame(
         {
             "table": ["SF1", "SF1", "SF1"],
             "permaticker": [199059, 199623, 220000],
             "ticker": ["AAPL", "MSFT", "DEFUNCT"],
             "name": ["Apple Inc", "Microsoft Corp", "Defunct Co"],
-            "cik": ["320193", "789019", "999999"],
+            "secfilings": [
+                _secfilings_url(320193),
+                _secfilings_url(789019),
+                _secfilings_url(999999),
+            ],
             "lastupdated": ["2026-01-01", "2026-01-01", "2010-06-01"],
         }
     )
@@ -72,6 +82,19 @@ def test_pull_sharadar_tickers_writes_parquet(tmp_path: Path):
     assert len(result) == 3
     # lastupdated should have been coerced to datetime
     assert pd.api.types.is_datetime64_any_dtype(result["lastupdated"])
+
+
+def test_pull_sharadar_tickers_derives_cik_from_secfilings(tmp_path: Path):
+    """Regression: SHARADAR/TICKERS has no `cik` column — it must be parsed
+    out of the secfilings EDGAR URL, or the whole resolve step KeyErrors."""
+    ndl = make_ndl({"SHARADAR/TICKERS": _sample_tickers()})
+    out = tmp_path / "sharadar_tickers.parquet"
+
+    result = pull_sharadar_tickers(ndl, out)
+
+    assert "cik" in result.columns
+    assert result.loc[result["ticker"] == "AAPL", "cik"].iloc[0] == 320193
+    assert result.loc[result["ticker"] == "MSFT", "cik"].iloc[0] == 789019
 
 
 def test_resolve_sharadar_tickers_maps_via_cik():

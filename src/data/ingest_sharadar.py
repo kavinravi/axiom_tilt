@@ -63,11 +63,26 @@ def _parse_dates(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
+def _add_cik_column(tickers: pd.DataFrame) -> pd.DataFrame:
+    """Derive an integer `cik` column from the `secfilings` URL.
+
+    SHARADAR/TICKERS has no standalone CIK field; the CIK is embedded in the
+    secfilings EDGAR URL, e.g. ".../browse-edgar?...&CIK=0002099039".
+    """
+    if "secfilings" in tickers.columns:
+        tickers["cik"] = pd.to_numeric(
+            tickers["secfilings"].str.extract(r"CIK=(\d+)", expand=False),
+            errors="coerce",
+        )
+    return tickers
+
+
 def pull_sharadar_tickers(ndl, output_path: Path) -> pd.DataFrame:
     """Pull the SHARADAR/TICKERS metadata table for SF1 (ticker <-> cik mapping)."""
     output_path.parent.mkdir(parents=True, exist_ok=True)
     tickers = ndl.get_table("SHARADAR/TICKERS", table="SF1", paginate=True)
     tickers = _parse_dates(tickers)
+    tickers = _add_cik_column(tickers)
     tickers.to_parquet(output_path, index=False)
     log.info("SHARADAR/TICKERS: %d rows -> %s", len(tickers), output_path)
     return tickers
@@ -82,9 +97,13 @@ def resolve_sharadar_tickers(
     One CIK can map to multiple Sharadar tickers (ticker changes over time);
     all of them are returned so SF1 history is complete.
     """
-    universe_ciks = set(universe_ids["cik"].dropna().astype(int).tolist())
+    universe_ciks = set(
+        pd.to_numeric(universe_ids["cik"], errors="coerce").dropna().astype(int).tolist()
+    )
 
     st = sharadar_tickers.copy()
+    if "cik" not in st.columns:
+        st = _add_cik_column(st)
     st["cik"] = pd.to_numeric(st["cik"], errors="coerce")
     matched = st[st["cik"].isin(universe_ciks)]
 
