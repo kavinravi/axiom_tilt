@@ -29,3 +29,4 @@ data/processed/crsp_daily/
 data/archive/
 
 *.log
+logs/*.csv
