@@ -26,6 +26,9 @@ data/embeddings/
 # Large derivatives that go to Cloudflare R2, not git
 data/processed/finbert_tok/
 data/processed/crsp_daily/
+data/processed/panel/
+data/processed/sharadar_sf1.parquet
+data/processed/sharadar_tickers.parquet
 data/archive/
 
 *.log

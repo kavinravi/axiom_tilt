@@ -77,6 +77,6 @@ Should print 5 library names (e.g. `['audit', 'bank', 'block', 'boardex', 'cboe'
 
 After step 5 works, run a pull:
 ```bash
-python -m src.data.ingest_wrds --linktable-only       # smallest, fastest probe
-python -m src.data.ingest_wrds --all                  # full pull
+python -m src.data.ingest_wrds --resolve-only         # smallest, fastest probe
+python -m src.data.ingest_wrds --all                  # full pull (resolve + CRSP daily)
 ```

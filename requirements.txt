@@ -41,7 +41,6 @@ beautifulsoup4>=4.12
 lxml>=5.2
 tenacity>=8.5
 python-dotenv>=1.0
-yfinance>=0.2.40
 pandas-datareader>=0.10
 tqdm>=4.66
 # WRDS (CRSP prices/returns) — primary price source. See docs/wrds-setup.md

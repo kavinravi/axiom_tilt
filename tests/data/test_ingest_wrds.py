@@ -8,9 +8,6 @@ import pandas as pd
 import pytest
 
 from src.data.ingest_wrds import (
-    pull_ccm_linktable,
-    pull_compustat_funda,
-    pull_compustat_fundq,
     pull_crsp_daily,
     resolve_universe_ids,
 )
@@ -54,28 +51,17 @@ def test_resolve_universe_ids_basic():
             "nameenddt": [pd.NaT, pd.NaT],
         }
     )
-    lnkhist = pd.DataFrame(
-        {
-            "gvkey": ["001690", "170617"],
-            "permno": [14593, 13407],
-            "linktype": ["LU", "LU"],
-            "linkprim": ["P", "P"],
-            "linkdt": [pd.Timestamp("1980-12-12"), pd.Timestamp("2012-05-18")],
-            "linkenddt": [pd.NaT, pd.NaT],
-        }
-    )
 
-    conn = make_conn({"crsp.stocknames": stocknames, "ccmxpf_lnkhist": lnkhist})
+    conn = make_conn({"crsp.stocknames": stocknames})
     result = resolve_universe_ids(universe, conn)
 
     assert len(result) == 2
-    assert {"ticker", "permno", "gvkey"}.issubset(result.columns)
+    assert {"ticker", "permno"}.issubset(result.columns)
+    assert "gvkey" not in result.columns  # fundamentals path removed
     apple = result[result["ticker"] == "AAPL"].iloc[0]
     assert apple["permno"] == 14593
-    assert apple["gvkey"] == "001690"
     meta = result[result["ticker"] == "META"].iloc[0]
     assert meta["permno"] == 13407
-    assert meta["gvkey"] == "170617"
 
 
 def test_resolve_universe_ids_low_match_raises():
@@ -96,18 +82,8 @@ def test_resolve_universe_ids_low_match_raises():
             "nameenddt": [pd.NaT],
         }
     )
-    lnkhist = pd.DataFrame(
-        {
-            "gvkey": ["001690"],
-            "permno": [14593],
-            "linktype": ["LU"],
-            "linkprim": ["P"],
-            "linkdt": [pd.Timestamp("1980-12-12")],
-            "linkenddt": [pd.NaT],
-        }
-    )
 
-    conn = make_conn({"crsp.stocknames": stocknames, "ccmxpf_lnkhist": lnkhist})
+    conn = make_conn({"crsp.stocknames": stocknames})
     with pytest.raises(RuntimeError, match="95"):
         resolve_universe_ids(universe, conn)
 
@@ -133,22 +109,11 @@ def test_resolve_universe_ids_ticker_reuse_picks_largest_overlap():
             "nameenddt": [pd.Timestamp("2004-08-18"), pd.NaT],  # first one ends, second is current
         }
     )
-    lnkhist = pd.DataFrame(
-        {
-            "gvkey": ["160329"],
-            "permno": [90319],
-            "linktype": ["LU"],
-            "linkprim": ["P"],
-            "linkdt": [pd.Timestamp("2014-04-03")],
-            "linkenddt": [pd.NaT],
-        }
-    )
 
-    conn = make_conn({"crsp.stocknames": stocknames, "ccmxpf_lnkhist": lnkhist})
+    conn = make_conn({"crsp.stocknames": stocknames})
     result = resolve_universe_ids(universe, conn)
     assert len(result) == 1
     assert result.iloc[0]["permno"] == 90319  # current Alphabet, not the dormant one
-    assert result.iloc[0]["gvkey"] == "160329"
 
 
 # --- pull_crsp_daily --------------------------------------------------------
@@ -228,79 +193,3 @@ def test_pull_crsp_daily_resume_skips_existing(tmp_path: Path):
     conn = MagicMock()
     pull_crsp_daily(conn, [14593], "2020-01-01", "2020-12-31", tmp_path)
     conn.raw_sql.assert_not_called()
-
-
-# --- Compustat pulls --------------------------------------------------------
-
-
-def test_pull_compustat_funda_uses_pit_filters(tmp_path: Path):
-    expected = pd.DataFrame(
-        {
-            "gvkey": ["001690"],
-            "datadate": [pd.Timestamp("2020-09-26")],
-            "rdq": [pd.Timestamp("2020-10-29")],
-            "at": [323888.0],
-        }
-    )
-    conn = make_conn({"comp.funda": expected})
-    out = tmp_path / "comp_funda.parquet"
-
-    pull_compustat_funda(conn, ["001690"], "1995-01-01", "2025-12-31", out)
-
-    sql_arg = conn.raw_sql.call_args[0][0]
-    assert "consol='C'" in sql_arg
-    assert "indfmt='INDL'" in sql_arg
-    assert "datafmt='STD'" in sql_arg
-    assert "popsrc='D'" in sql_arg
-    assert "curcd='USD'" in sql_arg
-    assert "comp.funda" in sql_arg
-
-    df = pd.read_parquet(out)
-    assert len(df) == 1
-    assert df["at"].iloc[0] == 323888.0
-
-
-def test_pull_compustat_fundq_uses_pit_filters(tmp_path: Path):
-    expected = pd.DataFrame(
-        {
-            "gvkey": ["001690"],
-            "datadate": [pd.Timestamp("2020-09-26")],
-            "rdq": [pd.Timestamp("2020-10-29")],
-            "atq": [323888.0],
-        }
-    )
-    conn = make_conn({"comp.fundq": expected})
-    out = tmp_path / "comp_fundq.parquet"
-
-    pull_compustat_fundq(conn, ["001690"], "1995-01-01", "2025-12-31", out)
-
-    sql_arg = conn.raw_sql.call_args[0][0]
-    assert "consol='C'" in sql_arg
-    assert "indfmt='INDL'" in sql_arg
-    assert "comp.fundq" in sql_arg
-
-
-# --- pull_ccm_linktable -----------------------------------------------------
-
-
-def test_pull_ccm_linktable_writes_parquet(tmp_path: Path):
-    expected = pd.DataFrame(
-        {
-            "gvkey": ["001690"],
-            "lpermno": [14593],
-            "lpermco": [9999],
-            "linktype": ["LU"],
-            "linkprim": ["P"],
-            "linkdt": [pd.Timestamp("1980-12-12")],
-            "linkenddt": [pd.NaT],
-        }
-    )
-    conn = make_conn({"ccmxpf_linktable": expected})
-    out = tmp_path / "ccm_linktable.parquet"
-
-    pull_ccm_linktable(conn, out)
-
-    assert out.exists()
-    df = pd.read_parquet(out)
-    assert len(df) == 1
-    assert df["gvkey"].iloc[0] == "001690"

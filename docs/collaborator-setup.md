@@ -64,11 +64,12 @@ rclone lsd r2:
 ```
 
 This downloads ~70 GB:
-- WRDS parquets (CRSP daily, Compustat, link table)
+- CRSP daily prices (`data/processed/crsp_daily/`, via WRDS)
+- Sharadar SF1 fundamentals (`data/processed/sharadar_sf1.parquet`)
+- The unified PIT panel (`data/processed/panel/`)
 - Cleaned EDGAR text bundle (unpacked to `data/interim/edgar_text/`)
 - Tokenized FinBERT dataset (`data/processed/finbert_tok/`)
 - Trained FinBERT model (`artifacts/finbert-mlm/`)
-- Archived legacy data (`data/archive/`)
 
 Run time: ~1-3 hr on home internet. Subsequent syncs are diff-only.
 
@@ -79,8 +80,8 @@ python -c "
 import duckdb
 print('CRSP daily rows:',
       duckdb.sql(\"SELECT COUNT(*) FROM 'data/processed/crsp_daily/year=*/*.parquet'\").df().iloc[0, 0])
-print('Compustat quarterly rows:',
-      duckdb.sql(\"SELECT COUNT(*) FROM 'data/processed/comp_fundq.parquet'\").df().iloc[0, 0])
+print('Panel rows:',
+      duckdb.sql(\"SELECT COUNT(*) FROM 'data/processed/panel/year=*/*.parquet'\").df().iloc[0, 0])
 "
 ```
 

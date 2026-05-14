@@ -1,10 +1,37 @@
 # WRDS Data Ingestion + Shared Storage — Design Spec
 
 **Date:** 2026-05-13
-**Status:** Draft, pending user review
+**Status:** Partially implemented — see Addendum below for what changed
 **Repo:** `axiom_tilt`
-**Branch:** `wrds-ingestion`
+**Branch:** `data-ingestion`
 **Supersedes:** `docs/superpowers/specs/2026-05-11-tiingo-prices-backfill-design.md` (tiingo backfill becomes moot once CRSP daily is in)
+
+## Addendum (2026-05-13, post-implementation) — Compustat → Sharadar pivot
+
+The fundamentals half of this spec did not survive contact with the school's WRDS
+subscription tier. What actually shipped:
+
+- **WRDS Compustat is inaccessible.** The school's WRDS tier has no `comp.funda` /
+  `comp.fundq` access (and the CRSP/Compustat-merged and sample schemas were either
+  linkage-only or 25-firm samples). `pull_compustat_funda`, `pull_compustat_fundq`,
+  `detect_compustat_schema`, the CCM link table pull, and **gvkey resolution** were
+  all removed — WRDS's role is now **CRSP daily prices + the ticker→permno crosswalk
+  only**. Sections 4, 6, 8 below describe code that no longer exists.
+- **SEC XBRL was tried as a bridge and dropped.** `ingest_edgar_xbrl.py` pulled the
+  companyfacts API but XBRL only covers ~2009+ — no GFC. Removed entirely.
+- **Fundamentals now come from Sharadar SF1** (Nasdaq Data Link, paid). PIT via
+  `datekey`, ARQ/ARY as-reported dimensions, coverage back to ~1993. New module:
+  `src/data/ingest_sharadar.py`.
+- **New: `src/data/build_panel.py`** materializes the PIT panel —
+  `merge_asof` of CRSP daily ← Sharadar SF1 (backward, `datekey <= date`), with a
+  leakage guard. Output: `data/processed/panel/year=YYYY/`. Permnos with zero
+  Sharadar coverage (~245 of 826, mostly old delisted names) are struck from the
+  panel — accepted partial survivorship bias, since FMP was off the table.
+- **yfinance prices and FMP fundamentals** (`ingest_prices.py`, `ingest_fundamentals.py`)
+  were deleted outright, not archived — they were never used in the final pipeline,
+  so the `migrate_to_wrds.sh` archival step (Section 9) is moot and also removed.
+
+The R2 / rclone sharing pipeline (Sections 5, 10, 11) is still the plan and unaffected.
 
 ## 1. Goal
 
