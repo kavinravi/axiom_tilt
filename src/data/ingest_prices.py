@@ -1,5 +1,10 @@
 """Pull daily OHLCV adjusted prices via yfinance for the universe.
 
+**DEPRECATED (2026-05-13):** superseded by src/data/ingest_wrds.py
+(CRSP daily via WRDS). yfinance drops delisted tickers, causing survivorship
+bias in backtests. Kept here for replication / fallback when WRDS access is
+unavailable. See docs/superpowers/specs/2026-05-13-wrds-ingestion-design.md.
+
 Output: data/processed/prices.parquet
 Long format: (date, ticker, open, high, low, close, adj_close, volume)
 """

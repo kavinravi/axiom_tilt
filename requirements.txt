@@ -44,6 +44,11 @@ python-dotenv>=1.0
 yfinance>=0.2.40
 pandas-datareader>=0.10
 tqdm>=4.66
+# WRDS (CRSP + Compustat) — primary post-migration data source. See docs/wrds-setup.md
+wrds>=3.2
+psycopg2-binary>=2.9
+# DuckDB for SQL queries against parquet
+duckdb>=1.1
 
 # Tooling
 pyyaml>=6.0

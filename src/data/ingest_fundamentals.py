@@ -1,5 +1,11 @@
 """Pull quarterly + annual fundamentals from Financial Modeling Prep.
 
+**DEPRECATED (2026-05-13):** superseded by src/data/ingest_wrds.py
+(Compustat funda + fundq via WRDS). FMP returns the latest restated values,
+introducing look-ahead bias. Compustat is point-in-time via (datadate, rdq).
+Kept here for replication / fallback. See
+docs/superpowers/specs/2026-05-13-wrds-ingestion-design.md.
+
 Output: data/processed/fundamentals.parquet
 Long format: (ticker, statement, period, period_end, filing_date, ...)
 

@@ -23,5 +23,9 @@ mlruns/
 data/raw/
 data/interim/
 data/embeddings/
+# Large derivatives that go to Cloudflare R2, not git
+data/processed/finbert_tok/
+data/processed/crsp_daily/
+data/archive/
 
 *.log
