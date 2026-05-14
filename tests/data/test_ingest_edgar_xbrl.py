@@ -10,6 +10,7 @@ import pytest
 
 from src.data.ingest_edgar_xbrl import (
     CONCEPT_MAP,
+    _fetch_company_facts,
     parse_all_raw,
     parse_company_facts,
     pull_xbrl_for_universe,
@@ -212,6 +213,27 @@ def test_parse_all_raw_no_files_returns_zero(tmp_path: Path):
     n = parse_all_raw(tmp_path, out)
     assert n == 0
     assert not out.exists()
+
+
+def test_fetch_company_facts_calls_token_bucket_correctly():
+    """Regression: _fetch_company_facts must use the real TokenBucket API.
+
+    Caught a real bug where this called `bucket.take()` but the method is
+    `bucket.acquire()`. Tests that patch _fetch_company_facts itself can't see
+    this — we need to exercise the real function with a mocked session/bucket.
+    """
+    bucket = MagicMock()
+    session = MagicMock()
+    response = MagicMock()
+    response.status_code = 200
+    response.json.return_value = {"facts": {}}
+    session.get.return_value = response
+
+    _fetch_company_facts(1234, bucket, {"User-Agent": "x"}, session)
+
+    bucket.acquire.assert_called_once()
+    session.get.assert_called_once()
+    assert "CIK0000001234.json" in session.get.call_args[0][0]
 
 
 def test_pull_xbrl_for_universe_handles_404(tmp_path: Path):

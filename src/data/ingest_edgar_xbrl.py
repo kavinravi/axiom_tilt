@@ -132,7 +132,7 @@ def _fetch_company_facts(
     session: requests.Session,
 ) -> dict | None:
     """GET /companyfacts/CIK{cik:010d}.json. Returns None on 404 (no XBRL for this CIK)."""
-    bucket.take()
+    bucket.acquire()
     url = f"{XBRL_BASE}/CIK{cik:010d}.json"
     resp = session.get(url, headers=headers, timeout=30)
     if resp.status_code == 404:
