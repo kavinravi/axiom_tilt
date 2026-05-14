@@ -15,6 +15,11 @@ if ! command -v rclone >/dev/null 2>&1; then
     exit 1
 fi
 
+if ! command -v zstd >/dev/null 2>&1; then
+    echo "zstd not installed (needed to pack edgar_text). Run: sudo apt install zstd" >&2
+    exit 1
+fi
+
 if ! rclone listremotes | grep -q '^r2:$'; then
     echo "rclone remote 'r2' not configured." >&2
     echo "Copy docs/rclone-r2-template.conf -> ~/.config/rclone/rclone.conf and fill in your R2 keys." >&2
@@ -24,10 +29,13 @@ fi
 # Pack the many-file edgar_text dir into one zstd-compressed archive.
 # rclone syncs O(1000s) of files efficiently; O(100K+) overwhelms it.
 # edgar_text is large (hundreds of GB of text) — this pack step is slow.
+# Pack to a .tmp name and rename on success, so a failed/interrupted pack never
+# leaves a partial tarball that the existence check below would mistake for done.
 if [ -d data/interim/edgar_text ] && [ ! -f data/interim/edgar_text.tar.zst ]; then
     echo "Packing data/interim/edgar_text/ (large — this is slow)..."
-    tar -I 'zstd -T0 -19' -cf data/interim/edgar_text.tar.zst \
+    tar -I 'zstd -T0 -19' -cf data/interim/edgar_text.tar.zst.tmp \
         -C data/interim edgar_text
+    mv data/interim/edgar_text.tar.zst.tmp data/interim/edgar_text.tar.zst
 fi
 
 echo "Syncing data/processed/ -> r2:axiom-tilt-data/data/processed/"
