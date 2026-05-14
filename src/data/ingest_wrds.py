@@ -52,14 +52,14 @@ CCM_LINK_FILTERS = "linkprim IN ('P', 'C') AND linktype IN ('LU', 'LC')"
 MIN_UNIVERSE_MATCH_RATE = 0.95
 
 # Compustat schemas to try in priority order. `comp` is the premium daily refresh
-# (= comp_na_daily_all) which requires an expensive subscription tier. Most schools
-# only subscribe to the annual snapshot.
+# (= comp_na_daily_all) which requires an expensive subscription tier. Many schools
+# subscribe instead to CRSP/Compustat Merged (`crsp_a_ccm`) which pre-joins
+# Compustat to CRSP permnos — same fundamentals data, accessed via CRSP's tier.
 COMPUSTAT_SCHEMA_CANDIDATES = [
     "comp",
+    "crsp_a_ccm",
     "comp_na_annual_all",
     "comp_na_monthly_all",
-    "compa",
-    "comp_a",
 ]
 
 
