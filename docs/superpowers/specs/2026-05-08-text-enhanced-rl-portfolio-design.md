@@ -1,7 +1,7 @@
 # Text-Enhanced RL Portfolio Allocation — Design Spec
 
 **Date:** 2026-05-08
-**Status:** Draft, pending user review
+**Status:** Active design — data layer implemented (CRSP + Sharadar + panel); FinBERT FT in progress; ranker/RL/backtest not yet built
 **Repo:** `axiom_tilt`
 
 ## 1. Research Question
@@ -79,34 +79,35 @@ For FinBERT MLM continued pretraining, EDGAR alone gives billions of tokens — 
 
 ### 3.3 Price and fundamentals
 
-- **Prices:** Daily OHLCV, adjusted for splits and dividends. CRSP if available, otherwise yfinance + Polygon for sanity-check overlap.
-- **Fundamentals:** Quarterly Compustat-style fields. SimFin or yfinance fundamentals as a fallback.
-- **Risk-free rate:** FRED (`DGS3MO`) for cost-of-cash and Sharpe denominator.
+*(Updated 2026-05-13 — see `docs/superpowers/specs/2026-05-13-wrds-ingestion-design.md` for the full data-layer history. yfinance and FMP were both tried and dropped.)*
 
-> **⚠️ Fundamentals ingestion is currently deferred (2026-05-10).** The first attempt used FMP's `/api/v3/{income,balance,cashflow}-statement/{ticker}` endpoints, which FMP deprecated on **2025-08-31**. Keys created after that date receive `403 Legacy Endpoint` errors. To unblock, pick one path before structured features are needed for the ranker:
->
-> 1. **Migrate to FMP's current API** (likely `/stable/income-statement?symbol=...`). Requires re-reading [FMP docs](https://site.financialmodelingprep.com/developer/docs) and rewriting the client + tests in `src/data/ingest_fundamentals.py`. Free tier still has request caps (~250/day) — fine for development, slow for full universe.
-> 2. **Upgrade to FMP Starter ($14/mo)** if it grandfathers the v3 endpoints, or to a higher tier covering the new endpoints with no per-day cap. Cheapest path if existing code keeps working with a tier change.
-> 3. **Switch fundamentals provider to Alpha Vantage** (`OVERVIEW`, `INCOME_STATEMENT`, `BALANCE_SHEET`, `CASH_FLOW`). Free tier is 25 req/day — too tight for full universe; premium tier ($50/mo) is closer to FMP Starter pricing. Code rewrite required.
->
-> Until this is resolved, the ranker will run on text features + price-derived features only (no valuation/profitability/leverage signals from fundamentals).
+- **Prices:** CRSP daily via Wharton WRDS — `src/data/ingest_wrds.py`. Prices, returns, volume, shares, OHLC, split/dividend factors, plus delisting returns from `crsp.msedelist`. Covers the full survivorship-bias-free universe (live + delisted), 1995–2024.
+- **Fundamentals:** Sharadar SF1 (Core US Fundamentals) via Nasdaq Data Link — `src/data/ingest_sharadar.py`. Point-in-time via `datekey` (filing date), As-Reported dimensions only (ARQ/ARY — no restated values), ~1993 onward so the 2008 GFC is covered. WRDS Compustat was inaccessible at the school's subscription tier; SEC XBRL was tried but only covers ~2009+ (no GFC) — both abandoned.
+- **Risk-free rate / macro:** FRED via `src/data/ingest_macro.py`.
+
+**Unified panel:** `src/data/build_panel.py` materializes `data/processed/panel/` — CRSP daily left-joined to Sharadar SF1 via a backward `merge_asof` (`datekey <= date`) with an explicit leakage guard. Permnos with no Sharadar coverage (~245 of 826, mostly old delisted names) are struck — an accepted partial survivorship-bias trade-off, since FMP was rejected for look-ahead/survivorship issues.
 
 ### 3.4 Directory layout
 
 ```
 data/
   raw/
-    edgar/         # downloaded 10-K, 10-Q, 8-K
-    transcripts/   # earnings calls
-    news/          # optional
-    prices/        # OHLCV
-    fundamentals/  # quarterly statements
-  interim/         # cleaned + deduped
-  processed/       # tokenized chunks, panel-aligned features
+    edgar/         # downloaded 10-K, 10-Q, 8-K (gitignored)
+    sec/           # company_tickers.json — universe build input
+  interim/
+    edgar_text/    # cleaned + deduped filings (gitignored)
+  processed/
+    crsp_daily/    # CRSP daily prices, year-partitioned (gitignored)
+    sharadar_sf1.parquet, sharadar_tickers.parquet  # fundamentals (gitignored)
+    panel/         # unified PIT panel, year-partitioned (gitignored)
+    finbert_tok/   # tokenized chunks (gitignored)
+    universe.parquet, universe_ids.parquet, macro.parquet, edgar_index.parquet
   embeddings/      # stock-day text vectors (post FinBERT + PCA + aggregation)
 ```
 
-`data/` and all subdirectories are tracked in git (per user request, to support laptop sync). Raw bulk corpora may need exclusion later if size becomes prohibitive.
+Small `data/processed/` artifacts stay tracked for laptop sync; large derivatives
+(`crsp_daily/`, `panel/`, `finbert_tok/`, Sharadar parquets, raw corpora) are
+gitignored and shared via Cloudflare R2 — see the WRDS ingestion spec.
 
 ## 4. FinBERT Fine-Tuning
 
