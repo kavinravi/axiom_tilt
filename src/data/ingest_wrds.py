@@ -51,6 +51,17 @@ CCM_LINK_FILTERS = "linkprim IN ('P', 'C') AND linktype IN ('LU', 'LC')"
 # Below this, halt so the user can investigate ticker mismatches.
 MIN_UNIVERSE_MATCH_RATE = 0.95
 
+# Compustat schemas to try in priority order. `comp` is the premium daily refresh
+# (= comp_na_daily_all) which requires an expensive subscription tier. Most schools
+# only subscribe to the annual snapshot.
+COMPUSTAT_SCHEMA_CANDIDATES = [
+    "comp",
+    "comp_na_annual_all",
+    "comp_na_monthly_all",
+    "compa",
+    "comp_a",
+]
+
 
 def _chunk(seq: list, n: int) -> Iterator[list]:
     """Yield successive n-sized chunks from seq."""
@@ -334,6 +345,28 @@ def pull_crsp_daily(
         log.info("year=%d: %d rows -> %s", year, len(year_df), out_part)
 
 
+def detect_compustat_schema(conn) -> str:
+    """Find which Compustat schema this WRDS account can read.
+
+    Tries each candidate in COMPUSTAT_SCHEMA_CANDIDATES with a 1-row probe.
+    Returns the first one that works; raises if none do.
+    """
+    for schema in COMPUSTAT_SCHEMA_CANDIDATES:
+        try:
+            conn.raw_sql(f"SELECT 1 FROM {schema}.funda LIMIT 1")
+            log.info("Compustat: using schema '%s'", schema)
+            return schema
+        except Exception as e:
+            first_line = str(e).strip().splitlines()[0] if str(e).strip() else "(empty)"
+            log.info("Compustat schema '%s' inaccessible: %s", schema, first_line[:160])
+            continue
+    raise RuntimeError(
+        f"No accessible Compustat schema found in {COMPUSTAT_SCHEMA_CANDIDATES}. "
+        "Run `conn.list_libraries()` interactively to see what's available, then "
+        "add the right one to COMPUSTAT_SCHEMA_CANDIDATES."
+    )
+
+
 def pull_compustat_funda(
     conn,
     gvkeys: list[str],
@@ -341,6 +374,7 @@ def pull_compustat_funda(
     end: str,
     output_path: Path,
     chunk_size: int = 500,
+    schema: str = "comp",
 ) -> None:
     """Pull Compustat annual fundamentals with standard PIT filters."""
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -351,7 +385,7 @@ def pull_compustat_funda(
         df = conn.raw_sql(
             f"""
             SELECT *
-            FROM comp.funda
+            FROM {schema}.funda
             WHERE {COMPUSTAT_PIT_FILTERS}
               AND gvkey IN ({gvkey_sql})
               AND datadate BETWEEN '{start}' AND '{end}'
@@ -362,7 +396,7 @@ def pull_compustat_funda(
 
     funda = pd.concat(dfs, ignore_index=True) if dfs else pd.DataFrame()
     funda.to_parquet(output_path, index=False)
-    log.info("comp.funda: %d rows -> %s", len(funda), output_path)
+    log.info("%s.funda: %d rows -> %s", schema, len(funda), output_path)
 
 
 def pull_compustat_fundq(
@@ -372,6 +406,7 @@ def pull_compustat_fundq(
     end: str,
     output_path: Path,
     chunk_size: int = 500,
+    schema: str = "comp",
 ) -> None:
     """Pull Compustat quarterly fundamentals with standard PIT filters."""
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -382,7 +417,7 @@ def pull_compustat_fundq(
         df = conn.raw_sql(
             f"""
             SELECT *
-            FROM comp.fundq
+            FROM {schema}.fundq
             WHERE {COMPUSTAT_PIT_FILTERS}
               AND gvkey IN ({gvkey_sql})
               AND datadate BETWEEN '{start}' AND '{end}'
@@ -393,7 +428,7 @@ def pull_compustat_fundq(
 
     fundq = pd.concat(dfs, ignore_index=True) if dfs else pd.DataFrame()
     fundq.to_parquet(output_path, index=False)
-    log.info("comp.fundq: %d rows -> %s", len(fundq), output_path)
+    log.info("%s.fundq: %d rows -> %s", schema, len(fundq), output_path)
 
 
 def pull_ccm_linktable(conn, output_path: Path) -> None:
@@ -473,8 +508,9 @@ def main() -> None:
             if run_crsp:
                 pull_crsp_daily(conn, permnos, args.start, args.end, crsp_dir)
             if run_compustat:
-                pull_compustat_funda(conn, gvkeys, args.start, args.end, funda_path)
-                pull_compustat_fundq(conn, gvkeys, args.start, args.end, fundq_path)
+                schema = detect_compustat_schema(conn)
+                pull_compustat_funda(conn, gvkeys, args.start, args.end, funda_path, schema=schema)
+                pull_compustat_fundq(conn, gvkeys, args.start, args.end, fundq_path, schema=schema)
 
         log.info("WRDS ingest complete.")
     finally:
