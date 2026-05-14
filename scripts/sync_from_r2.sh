@@ -21,18 +21,18 @@ fi
 echo "Pulling data/processed/ from R2..."
 rclone copy r2:axiom-tilt-data/data/processed/ data/processed/ --progress
 
+echo "Pulling data/raw/sec/ from R2..."
+rclone copy r2:axiom-tilt-data/data/raw/sec/ data/raw/sec/ --progress
+
 echo "Pulling data/interim/ from R2..."
 rclone copy r2:axiom-tilt-data/data/interim/ data/interim/ --progress
-
-echo "Pulling data/archive/ from R2..."
-rclone copy r2:axiom-tilt-data/data/archive/ data/archive/ --progress
 
 echo "Pulling artifacts/ from R2..."
 rclone copy r2:axiom-tilt-data/artifacts/ artifacts/ --progress
 
 # Unpack the tarred edgar_text bundle if present and not already unpacked.
 if [ -f data/interim/edgar_text.tar.zst ] && [ ! -d data/interim/edgar_text ]; then
-    echo "Unpacking data/interim/edgar_text.tar.zst (this takes a few minutes)..."
+    echo "Unpacking data/interim/edgar_text.tar.zst (large — this is slow)..."
     tar -I 'zstd -d' -xf data/interim/edgar_text.tar.zst -C data/interim/
 fi
 

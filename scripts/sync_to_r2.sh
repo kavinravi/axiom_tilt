@@ -3,8 +3,9 @@
 # Run after WRDS pulls, FinBERT training milestones, or any data update worth sharing.
 #
 # Requires: rclone configured with an [r2] remote (see docs/rclone-r2-template.conf).
-# Skips:    data/raw/edgar/ (243 GB, re-derivable via src/data/ingest_filings.py)
-#           artifacts/finbert-mlm/checkpoint-*/ (1.3 GB each, reproducible via training resume)
+# Skips:    data/raw/edgar/ (raw SGML — huge, re-derivable via ingest_filings.py)
+#           artifacts/finbert-mlm/checkpoint-*/ (reproducible via training resume)
+# The bucket is meant to be a complete "recreate the project" snapshot otherwise.
 
 set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
@@ -20,10 +21,11 @@ if ! rclone listremotes | grep -q '^r2:$'; then
     exit 1
 fi
 
-# Pack the 227K-file edgar_text dir into one zstd-compressed archive.
+# Pack the many-file edgar_text dir into one zstd-compressed archive.
 # rclone syncs O(1000s) of files efficiently; O(100K+) overwhelms it.
+# edgar_text is large (hundreds of GB of text) — this pack step is slow.
 if [ -d data/interim/edgar_text ] && [ ! -f data/interim/edgar_text.tar.zst ]; then
-    echo "Packing data/interim/edgar_text/ (this takes a few minutes)..."
+    echo "Packing data/interim/edgar_text/ (large — this is slow)..."
     tar -I 'zstd -T0 -19' -cf data/interim/edgar_text.tar.zst \
         -C data/interim edgar_text
 fi
@@ -31,15 +33,17 @@ fi
 echo "Syncing data/processed/ -> r2:axiom-tilt-data/data/processed/"
 rclone sync data/processed/ r2:axiom-tilt-data/data/processed/ --progress
 
+# data/raw/sec/ is a small universe-build input; data/raw/edgar/ (raw SGML) is
+# deliberately not synced — it's huge and re-derivable via ingest_filings.py.
+if [ -d data/raw/sec ]; then
+    echo "Syncing data/raw/sec/ -> r2:axiom-tilt-data/data/raw/sec/"
+    rclone sync data/raw/sec/ r2:axiom-tilt-data/data/raw/sec/ --progress
+fi
+
 if [ -f data/interim/edgar_text.tar.zst ]; then
     echo "Syncing data/interim/edgar_text.tar.zst -> r2:axiom-tilt-data/data/interim/"
     rclone sync data/interim/edgar_text.tar.zst \
         r2:axiom-tilt-data/data/interim/edgar_text.tar.zst --progress
-fi
-
-if [ -d data/archive ]; then
-    echo "Syncing data/archive/ -> r2:axiom-tilt-data/data/archive/"
-    rclone sync data/archive/ r2:axiom-tilt-data/data/archive/ --progress
 fi
 
 if [ -d artifacts/finbert-mlm ]; then
