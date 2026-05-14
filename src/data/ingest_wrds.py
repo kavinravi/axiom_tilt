@@ -101,18 +101,26 @@ def resolve_universe_ids(
     Joins universe -> crsp.stocknames by ticker + date overlap, then
     permno -> crsp.ccmxpf_lnkhist by date overlap to get gvkey.
 
-    Returns the universe with resolved permno (nullable Int64) and gvkey (nullable str).
-    Raises RuntimeError if fewer than MIN_UNIVERSE_MATCH_RATE of rows resolve.
+    Returns the FULL universe with resolved permno (nullable Int64) and
+    gvkey (nullable str). Rows that cannot be resolved keep their original
+    fields with permno/gvkey = NA.
+
+    Raises RuntimeError if fewer than MIN_UNIVERSE_MATCH_RATE of rows
+    resolve to a permno.
     """
     log.info("Resolving %d universe rows to permno/gvkey", len(universe))
 
     universe = universe.copy()
     universe["date_in"] = pd.to_datetime(universe["date_in"])
     universe["date_out"] = pd.to_datetime(universe["date_out"])
+    universe = universe.reset_index(drop=True)
+    universe["_row_idx"] = universe.index
 
+    sentinel = pd.Timestamp("2099-12-31")
+
+    # --- Step 1: ticker -> permno via crsp.stocknames -----------------------
     tickers = sorted(universe["ticker"].dropna().unique().tolist())
     ticker_sql = _sql_in_list(tickers, quote=True)
-
     stocknames = conn.raw_sql(
         f"""
         SELECT permno, ticker, namedt, nameenddt
@@ -121,88 +129,86 @@ def resolve_universe_ids(
         """,
         date_cols=["namedt", "nameenddt"],
     )
+    matched_tickers = stocknames["ticker"].nunique() if len(stocknames) else 0
     log.info(
-        "crsp.stocknames returned %d rows for %d unique tickers",
+        "crsp.stocknames returned %d rows; %d/%d universe tickers had at least one stocknames row",
         len(stocknames),
+        matched_tickers,
         len(tickers),
     )
 
-    if stocknames.empty:
-        raise RuntimeError(
-            "crsp.stocknames returned zero rows — check tickers or WRDS access."
+    # LEFT JOIN universe to stocknames on ticker; compute date-interval overlap.
+    sn_merged = universe.merge(stocknames, on="ticker", how="left")
+    rs = sn_merged["namedt"]
+    re = sn_merged["nameenddt"].fillna(sentinel)
+    ls = sn_merged["date_in"]
+    le = sn_merged["date_out"]
+    interval_start = pd.concat([ls, rs], axis=1).max(axis=1)
+    interval_end = pd.concat([le, re], axis=1).min(axis=1)
+    sn_merged["_overlap"] = (interval_end - interval_start).dt.days
+
+    # Keep only rows with strictly positive overlap (excludes both
+    # no-ticker-match rows where namedt is NaT, and rows where intervals miss).
+    sn_valid = sn_merged[sn_merged["_overlap"] > 0].copy()
+    # For each universe row (_row_idx), pick the stocknames row with the
+    # largest overlap (handles ticker reuse across distinct companies).
+    sn_best = (
+        sn_valid.sort_values("_overlap", ascending=False)
+        .drop_duplicates(subset="_row_idx", keep="first")[["_row_idx", "permno"]]
+    )
+
+    with_permno = universe.merge(sn_best, on="_row_idx", how="left")
+    permno_resolved = with_permno["permno"].notna().sum()
+    log.info(
+        "After stocknames overlap-join: %d/%d universe rows have a permno",
+        permno_resolved,
+        len(universe),
+    )
+
+    # --- Step 2: permno -> gvkey via crsp.ccmxpf_lnkhist --------------------
+    permnos = sorted(with_permno["permno"].dropna().astype(int).unique().tolist())
+    if permnos:
+        permno_sql = _sql_in_list(permnos)
+        lnkhist = conn.raw_sql(
+            f"""
+            SELECT gvkey, lpermno AS permno, linktype, linkprim, linkdt, linkenddt
+            FROM crsp.ccmxpf_lnkhist
+            WHERE lpermno IN ({permno_sql})
+              AND {CCM_LINK_FILTERS}
+            """,
+            date_cols=["linkdt", "linkenddt"],
         )
-
-    # Universe x stocknames: overlap join on ticker + date interval.
-    u2p = _interval_overlap_join(
-        left=universe,
-        right=stocknames,
-        key="ticker",
-        left_start="date_in",
-        left_end="date_out",
-        right_start="namedt",
-        right_end="nameenddt",
-    )
-    # Multiple stocknames rows can match (ticker reuse across periods). Pick the
-    # one whose interval-overlap is largest with the universe row.
-    sentinel = pd.Timestamp("2099-12-31")
-    re = u2p["nameenddt"].fillna(sentinel)
-    overlap_days = (
-        u2p[["date_out", "nameenddt"]]
-        .assign(re=re)
-        .apply(lambda r: min(r["date_out"], r["re"]), axis=1)
-        - u2p[["date_in", "namedt"]].max(axis=1)
-    ).dt.days.clip(lower=0)
-    u2p = u2p.assign(_overlap=overlap_days)
-    u2p = (
-        u2p.sort_values("_overlap", ascending=False)
-        .drop_duplicates(subset=["ticker", "date_in", "date_out"], keep="first")
-        .drop(columns=["_overlap", "namedt", "nameenddt"])
-    )
-
-    permnos = sorted(u2p["permno"].dropna().astype(int).unique().tolist())
-    if not permnos:
-        raise RuntimeError("No permnos resolved from stocknames join.")
-    permno_sql = _sql_in_list(permnos)
-
-    lnkhist = conn.raw_sql(
-        f"""
-        SELECT gvkey, lpermno AS permno, linktype, linkprim, linkdt, linkenddt
-        FROM crsp.ccmxpf_lnkhist
-        WHERE lpermno IN ({permno_sql})
-          AND {CCM_LINK_FILTERS}
-        """,
-        date_cols=["linkdt", "linkenddt"],
-    )
-    log.info("ccmxpf_lnkhist returned %d rows for %d permnos", len(lnkhist), len(permnos))
+        log.info(
+            "ccmxpf_lnkhist returned %d rows for %d permnos",
+            len(lnkhist),
+            len(permnos),
+        )
+    else:
+        lnkhist = pd.DataFrame()
 
     if not lnkhist.empty:
-        # u2p has (ticker, date_in, date_out, permno). Join with lnkhist on permno + date overlap.
-        u2p["permno"] = u2p["permno"].astype(int)
         lnkhist["permno"] = lnkhist["permno"].astype(int)
-        p2g = _interval_overlap_join(
-            left=u2p,
-            right=lnkhist,
-            key="permno",
-            left_start="date_in",
-            left_end="date_out",
-            right_start="linkdt",
-            right_end="linkenddt",
+        wp_with_permno = with_permno.dropna(subset=["permno"]).copy()
+        wp_with_permno["permno"] = wp_with_permno["permno"].astype(int)
+        lk_merged = wp_with_permno.merge(lnkhist, on="permno", how="left")
+        rs = lk_merged["linkdt"]
+        re = lk_merged["linkenddt"].fillna(sentinel)
+        ls = lk_merged["date_in"]
+        le = lk_merged["date_out"]
+        interval_start = pd.concat([ls, rs], axis=1).max(axis=1)
+        interval_end = pd.concat([le, re], axis=1).min(axis=1)
+        lk_merged["_overlap"] = (interval_end - interval_start).dt.days
+        lk_valid = lk_merged[lk_merged["_overlap"] > 0].copy()
+        lk_best = (
+            lk_valid.sort_values("_overlap", ascending=False)
+            .drop_duplicates(subset="_row_idx", keep="first")[["_row_idx", "gvkey"]]
         )
-        p2g = p2g.drop_duplicates(
-            subset=["ticker", "date_in", "date_out"], keep="first"
-        )
-        # Reattach unmatched (permno-resolved but no gvkey) rows so we don't lose them.
-        unmatched = u2p[
-            ~u2p.set_index(["ticker", "date_in", "date_out"]).index.isin(
-                p2g.set_index(["ticker", "date_in", "date_out"]).index
-            )
-        ].copy()
-        unmatched["gvkey"] = pd.NA
-        result = pd.concat([p2g, unmatched], ignore_index=True)
+        result = with_permno.merge(lk_best, on="_row_idx", how="left")
     else:
-        result = u2p.copy()
+        result = with_permno.copy()
         result["gvkey"] = pd.NA
 
+    result = result.drop(columns=["_row_idx"])
     keep_cols = [
         c
         for c in [
@@ -221,7 +227,7 @@ def resolve_universe_ids(
     resolved = result["permno"].notna().sum()
     match_rate = resolved / len(universe) if len(universe) else 0.0
     log.info(
-        "Resolution: %d/%d universe rows -> permno (%.1f%%); %d -> gvkey",
+        "Resolution summary: %d/%d universe rows -> permno (%.1f%%); %d -> gvkey",
         resolved,
         len(universe),
         match_rate * 100,
@@ -229,11 +235,21 @@ def resolve_universe_ids(
     )
 
     if match_rate < MIN_UNIVERSE_MATCH_RATE:
-        unresolved = result[result["permno"].isna()]["ticker"].tolist()
-        log.error("Unresolved tickers: %s", unresolved[:20])
+        unresolved = result[result["permno"].isna()][["ticker", "date_in", "date_out"]]
+        log.error(
+            "Unresolved universe rows: %d. Sample (first 30 tickers): %s",
+            len(unresolved),
+            unresolved["ticker"].tolist()[:30],
+        )
+        # Save the full unresolved list to disk for inspection.
+        unresolved_path = repo_root() / "logs" / "wrds_unresolved_tickers.csv"
+        unresolved_path.parent.mkdir(parents=True, exist_ok=True)
+        unresolved.to_csv(unresolved_path, index=False)
+        log.error("Full unresolved list written to %s", unresolved_path)
         raise RuntimeError(
             f"Universe permno resolution rate {match_rate:.1%} < "
-            f"{MIN_UNIVERSE_MATCH_RATE:.0%}. Check ticker spellings or WRDS access."
+            f"{MIN_UNIVERSE_MATCH_RATE:.0%}. "
+            f"Inspect {unresolved_path} to see which tickers/periods didn't match."
         )
 
     return result
