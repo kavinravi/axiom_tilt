@@ -26,6 +26,11 @@ if ! rclone listremotes | grep -q '^r2:$'; then
     exit 1
 fi
 
+# --s3-no-check-bucket: the R2 API token has Object Read/Write but not
+# bucket-creation rights (by design). rclone's multipart-upload path probes
+# CreateBucket otherwise, which 403s on large files. The bucket already exists.
+RCLONE_OPTS=(--progress --s3-no-check-bucket)
+
 # Pack the many-file edgar_text dir into one zstd-compressed archive.
 # rclone syncs O(1000s) of files efficiently; O(100K+) overwhelms it.
 # edgar_text is large (hundreds of GB of text) — this pack step is slow.
@@ -39,25 +44,25 @@ if [ -d data/interim/edgar_text ] && [ ! -f data/interim/edgar_text.tar.zst ]; t
 fi
 
 echo "Syncing data/processed/ -> r2:axiom-tilt-data/data/processed/"
-rclone sync data/processed/ r2:axiom-tilt-data/data/processed/ --progress
+rclone sync data/processed/ r2:axiom-tilt-data/data/processed/ "${RCLONE_OPTS[@]}"
 
 # data/raw/sec/ is a small universe-build input; data/raw/edgar/ (raw SGML) is
 # deliberately not synced — it's huge and re-derivable via ingest_filings.py.
 if [ -d data/raw/sec ]; then
     echo "Syncing data/raw/sec/ -> r2:axiom-tilt-data/data/raw/sec/"
-    rclone sync data/raw/sec/ r2:axiom-tilt-data/data/raw/sec/ --progress
+    rclone sync data/raw/sec/ r2:axiom-tilt-data/data/raw/sec/ "${RCLONE_OPTS[@]}"
 fi
 
 if [ -f data/interim/edgar_text.tar.zst ]; then
     echo "Syncing data/interim/edgar_text.tar.zst -> r2:axiom-tilt-data/data/interim/"
     rclone sync data/interim/edgar_text.tar.zst \
-        r2:axiom-tilt-data/data/interim/edgar_text.tar.zst --progress
+        r2:axiom-tilt-data/data/interim/edgar_text.tar.zst "${RCLONE_OPTS[@]}"
 fi
 
 if [ -d artifacts/finbert-mlm ]; then
     echo "Syncing artifacts/finbert-mlm/ -> r2 (excluding intermediate checkpoints)"
     rclone sync artifacts/finbert-mlm/ r2:axiom-tilt-data/artifacts/finbert-mlm/ \
-        --progress --exclude 'checkpoint-*/**'
+        "${RCLONE_OPTS[@]}" --exclude 'checkpoint-*/**'
 fi
 
 echo "Sync complete."
