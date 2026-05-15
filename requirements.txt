@@ -41,9 +41,16 @@ beautifulsoup4>=4.12
 lxml>=5.2
 tenacity>=8.5
 python-dotenv>=1.0
-yfinance>=0.2.40
 pandas-datareader>=0.10
 tqdm>=4.66
+# WRDS (CRSP prices/returns) — primary price source. See docs/wrds-setup.md
+wrds>=3.2
+psycopg2-binary>=2.9
+# Sharadar SF1 via Nasdaq Data Link — primary fundamentals source (PIT, 1998+)
+# NOTE: PyPI distribution is "Nasdaq-Data-Link"; the import name is "nasdaqdatalink".
+Nasdaq-Data-Link>=1.0
+# DuckDB for SQL queries against parquet
+duckdb>=1.1
 
 # Notebook tooling
 nbformat>=5.10
