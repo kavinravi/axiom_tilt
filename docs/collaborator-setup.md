@@ -6,9 +6,10 @@ Get a fresh laptop from zero to running notebooks, with all shared data in place
 
 - git
 - Python 3.11+ (owner runs 3.12)
-- **~350 GB free disk.** The synced bundle is ~90-100 GB, but `edgar_text`
-  unpacks from its ~50 GB tarball to ~243 GB of loose files. Budget for the
-  download + the unpacked tree + a bit for your own work.
+- **~400 GB free disk.** The synced bundle is ~95-110 GB compressed, but
+  `edgar_text` unpacks from its ~50 GB tarball to ~243 GB of loose files and
+  `edgar_text_v2` adds another ~53 GB. Budget for the download + both
+  unpacked trees + a bit for your own work.
 
 ## Steps
 
@@ -87,12 +88,17 @@ rclone lsd r2:
 ./scripts/sync_from_r2.sh
 ```
 
-This downloads ~90-100 GB:
+This downloads ~95-110 GB:
 - CRSP daily prices (`data/processed/crsp_daily/`, via WRDS)
 - Sharadar SF1 fundamentals (`data/processed/sharadar_sf1.parquet`)
 - The unified PIT panel (`data/processed/panel/`)
-- Cleaned EDGAR text bundle — pulled as a ~50 GB tarball, auto-unpacked to
-  `data/interim/edgar_text/` (~243 GB on disk)
+- Cleaned EDGAR text bundle (v1) — pulled as a ~50 GB tarball, auto-unpacked to
+  `data/interim/edgar_text/` (~243 GB on disk). This is the raw SGML
+  extraction, retained as the canonical anchor for re-running the refilter.
+- Refiltered EDGAR text bundle (v2) — pulled as a smaller tarball,
+  auto-unpacked to `data/interim/edgar_text_v2/` (~53 GB on disk). XBRL fact
+  dumps, residual HTML, and base64 attachments are stripped. **Notebook 02
+  reads this directory**, not v1.
 - Tokenized FinBERT dataset (`data/processed/finbert_tok/`)
 - Trained FinBERT model (`artifacts/finbert-mlm/`)
 

@@ -39,10 +39,17 @@ rclone copy r2:axiom-tilt-data/data/interim/ data/interim/ "${RCLONE_OPTS[@]}"
 echo "Pulling artifacts/ from R2..."
 rclone copy r2:axiom-tilt-data/artifacts/ artifacts/ "${RCLONE_OPTS[@]}"
 
-# Unpack the tarred edgar_text bundle if present and not already unpacked.
+# Unpack the tarred edgar_text bundles if present and not already unpacked.
+# v1 (raw SGML extraction) is the canonical anchor; v2 is the refiltered
+# embedding-ready corpus and is what notebook 02 reads.
 if [ -f data/interim/edgar_text.tar.zst ] && [ ! -d data/interim/edgar_text ]; then
     echo "Unpacking data/interim/edgar_text.tar.zst (large — this is slow)..."
     tar -I 'zstd -d' -xf data/interim/edgar_text.tar.zst -C data/interim/
+fi
+
+if [ -f data/interim/edgar_text_v2.tar.zst ] && [ ! -d data/interim/edgar_text_v2 ]; then
+    echo "Unpacking data/interim/edgar_text_v2.tar.zst (this is slow)..."
+    tar -I 'zstd -d' -xf data/interim/edgar_text_v2.tar.zst -C data/interim/
 fi
 
 echo "Sync complete."

@@ -127,9 +127,15 @@ python -m src.data.clean_filings --workers 16
   (too-short or below MIN_TEXT_LENGTH=500).
 - Output: `data/interim/edgar_text/{cik}/{accession}.txt` — 103 GB total (~14% of raw).
 - Per-file resume; safe to interrupt and re-run.
-- Quality caveat: output retains XBRL namespace residue (`iso4217:USD xbrli:shares`)
-  and financial-table number dumps in some files. Probably fine for MLM but worth
-  spot-checking before training; add a post-filter if noise dominates the corpus.
+- Quality caveat (was an issue for MLM, blocking for embedding): output retains
+  XBRL namespace residue (`iso4217:USD xbrli:shares`), financial-table number
+  dumps, residual HTML attribute fragments (the `<[^>]+>` regex fails when an
+  attribute value contains `>`), and partially-decoded base64 image
+  attachments. The median 10-Q was 2.1 MB of "text" of which ~70% was noise.
+  **Resolved 2026-05-15** via `src/data/refilter_text.py` (sliding-window
+  content-density filter + BeautifulSoup HTML fallback). Output:
+  `data/interim/edgar_text_v2/` — 53 GB across 226,915 files (vs 243 GB v1).
+  Notebook 02 reads v2; v1 is retained as the canonical anchor.
 
 ### Step 2: Open the notebook in Cursor and execute Sections A–D
 - `notebooks/01_finbert_finetune.ipynb`

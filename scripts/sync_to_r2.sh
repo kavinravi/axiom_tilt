@@ -31,16 +31,26 @@ fi
 # CreateBucket otherwise, which 403s on large files. The bucket already exists.
 RCLONE_OPTS=(--progress --s3-no-check-bucket)
 
-# Pack the many-file edgar_text dir into one zstd-compressed archive.
+# Pack the many-file edgar_text dirs into single zstd-compressed archives.
 # rclone syncs O(1000s) of files efficiently; O(100K+) overwhelms it.
-# edgar_text is large (hundreds of GB of text) — this pack step is slow.
-# Pack to a .tmp name and rename on success, so a failed/interrupted pack never
+# edgar_text (v1, raw SGML extraction) and edgar_text_v2 (refiltered for
+# embedding) are both shared — v1 as the canonical anchor so the refilter can
+# be re-run with different params, v2 as the embedding-ready corpus so a
+# collaborator doesn't have to spend ~30 min CPU on refilter_text.py.
+# Pack to .tmp and rename on success so a failed/interrupted pack never
 # leaves a partial tarball that the existence check below would mistake for done.
 if [ -d data/interim/edgar_text ] && [ ! -f data/interim/edgar_text.tar.zst ]; then
     echo "Packing data/interim/edgar_text/ (large — this is slow)..."
     tar -I 'zstd -T0 -19' -cf data/interim/edgar_text.tar.zst.tmp \
         -C data/interim edgar_text
     mv data/interim/edgar_text.tar.zst.tmp data/interim/edgar_text.tar.zst
+fi
+
+if [ -d data/interim/edgar_text_v2 ] && [ ! -f data/interim/edgar_text_v2.tar.zst ]; then
+    echo "Packing data/interim/edgar_text_v2/ (large — this is slow)..."
+    tar -I 'zstd -T0 -19' -cf data/interim/edgar_text_v2.tar.zst.tmp \
+        -C data/interim edgar_text_v2
+    mv data/interim/edgar_text_v2.tar.zst.tmp data/interim/edgar_text_v2.tar.zst
 fi
 
 echo "Syncing data/processed/ -> r2:axiom-tilt-data/data/processed/"
@@ -60,6 +70,12 @@ if [ -f data/interim/edgar_text.tar.zst ]; then
     # break the unpack step in sync_from_r2.sh (it expects a flat file path).
     rclone copyto data/interim/edgar_text.tar.zst \
         r2:axiom-tilt-data/data/interim/edgar_text.tar.zst "${RCLONE_OPTS[@]}"
+fi
+
+if [ -f data/interim/edgar_text_v2.tar.zst ]; then
+    echo "Syncing data/interim/edgar_text_v2.tar.zst -> r2:axiom-tilt-data/data/interim/"
+    rclone copyto data/interim/edgar_text_v2.tar.zst \
+        r2:axiom-tilt-data/data/interim/edgar_text_v2.tar.zst "${RCLONE_OPTS[@]}"
 fi
 
 if [ -d artifacts/finbert-mlm ]; then
