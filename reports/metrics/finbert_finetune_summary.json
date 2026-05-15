@@ -1,0 +1,9 @@
+{
+  "base_model": "yiyanghkust/finbert-pretrain",
+  "final_train_loss": 1.8584,
+  "final_val_loss": 1.8187741041183472,
+  "final_val_perplexity": 6.164297029731563,
+  "total_steps": 274387,
+  "total_epochs": 1.0,
+  "timestamp_finished": "2026-05-15T11:13:51.124335"
+}
