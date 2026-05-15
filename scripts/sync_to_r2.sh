@@ -55,7 +55,10 @@ fi
 
 if [ -f data/interim/edgar_text.tar.zst ]; then
     echo "Syncing data/interim/edgar_text.tar.zst -> r2:axiom-tilt-data/data/interim/"
-    rclone sync data/interim/edgar_text.tar.zst \
+    # Use copyto (not sync) for single-file uploads. `rclone sync src.file dst.file`
+    # creates a directory at dst.file/ and uploads to dst.file/src.file, which would
+    # break the unpack step in sync_from_r2.sh (it expects a flat file path).
+    rclone copyto data/interim/edgar_text.tar.zst \
         r2:axiom-tilt-data/data/interim/edgar_text.tar.zst "${RCLONE_OPTS[@]}"
 fi
 

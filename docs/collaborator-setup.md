@@ -17,8 +17,11 @@ Get a fresh laptop from zero to running notebooks, with all shared data in place
 ```bash
 git clone https://github.com/kavinravi/axiom_tilt.git
 cd axiom_tilt
+pip install -r requirements.txt
 pip install -e .
 ```
+
+`requirements.txt` pins torch, transformers, WRDS, etc. `pip install -e .` then makes `src/` importable as the `axiom_tilt` package. Both steps are needed.
 
 ### 2. Set up your `.env`
 
