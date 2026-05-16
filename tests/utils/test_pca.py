@@ -12,6 +12,7 @@ import pytest
 from src.utils.pca import (
     assemble_training_matrix,
     filter_in_universe,
+    fit_pca_initial,
     pick_n_components,
     weekly_snapshots,
 )
@@ -227,3 +228,31 @@ def test_assemble_training_matrix_raises_when_no_shards(tmp_path: Path):
     })
     with pytest.raises(FileNotFoundError, match="no parquet shards"):
         assemble_training_matrix(tmp_path, universe_ids, "2007-01-01", "2007-12-31")
+
+
+# -------------------------------- fit_pca_initial ------------------------------
+
+
+def test_fit_pca_initial_recovers_planted_low_rank_signal():
+    """5-dim signal embedded into 50 with small noise -> n_pca should land near 5+1."""
+    rng = np.random.RandomState(42)
+    truth = rng.randn(1000, 5).astype(np.float32)
+    proj = rng.randn(5, 50).astype(np.float32)
+    noise = rng.randn(1000, 50).astype(np.float32) * 0.01
+    X = truth @ proj + noise
+
+    n_pca, cum_var, pca = fit_pca_initial(X, target=0.95)
+
+    assert cum_var.shape == (50,)
+    assert 5 <= n_pca <= 10  # tight band — signal dominates
+    assert pca.n_components_ == n_pca
+    # cum_var[n_pca - 1] meets the target (because we hit it or capped at full rank)
+    assert cum_var[n_pca - 1] >= 0.95 - 1e-6 or n_pca == 50
+
+
+def test_fit_pca_initial_higher_target_yields_more_components():
+    rng = np.random.RandomState(0)
+    X = rng.randn(500, 20).astype(np.float32)
+    n95, _, _ = fit_pca_initial(X, target=0.95)
+    n99, _, _ = fit_pca_initial(X, target=0.99)
+    assert n99 >= n95

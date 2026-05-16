@@ -13,6 +13,7 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+from sklearn.decomposition import PCA
 
 
 def pick_n_components(cum_var: np.ndarray, target: float) -> int:
@@ -116,3 +117,21 @@ def assemble_training_matrix(
     X = np.stack([np.asarray(v, dtype=np.float32) for v in panel["vec"].values])
     meta = panel[["permno", "date"]].reset_index(drop=True)
     return X, meta
+
+
+def fit_pca_initial(X: np.ndarray, target: float = 0.99) -> tuple[int, np.ndarray, PCA]:
+    """First-walk PCA fit. Pick n_pca via cum-var target, lock for all walks.
+
+    Two SVD passes: one full-rank (cheap at our scale, gives the §17.2 cum-var
+    curve) and one truncated for the production transformer.
+
+    Returns:
+      n_pca:   locked dim
+      cum_var: full cumulative explained-variance curve, all components
+      pca:     fitted PCA with n_components=n_pca, ready to .transform()
+    """
+    full = PCA(svd_solver="full").fit(X)
+    cum_var = np.cumsum(full.explained_variance_ratio_)
+    n_pca = pick_n_components(cum_var, target=target)
+    pca = PCA(n_components=n_pca, svd_solver="full").fit(X)
+    return n_pca, cum_var, pca
