@@ -10,6 +10,7 @@ notebooks/04_pca_text_features.ipynb.
 from __future__ import annotations
 
 import numpy as np
+import pandas as pd
 
 
 def pick_n_components(cum_var: np.ndarray, target: float) -> int:
@@ -28,3 +29,21 @@ def pick_n_components(cum_var: np.ndarray, target: float) -> int:
         return len(cum_var)
     n = int(np.searchsorted(cum_var, target, side="left")) + 1
     return min(n + 1, len(cum_var))
+
+
+def weekly_snapshots(
+    panel: pd.DataFrame,
+    permno_col: str = "permno",
+    date_col: str = "date",
+) -> pd.DataFrame:
+    """Return the latest observation per (permno, ISO week ending Friday).
+
+    Used to resample the daily stock-day embed panel to weekly before PCA fit,
+    matching the §3.1 rebalance cadence and avoiding the forward-fill bulk.
+    """
+    df = panel.copy()
+    df[date_col] = pd.to_datetime(df[date_col])
+    df["_week"] = df[date_col].dt.to_period("W-FRI")
+    df = df.sort_values([permno_col, "_week", date_col])
+    out = df.groupby([permno_col, "_week"], as_index=False).tail(1)
+    return out.drop(columns="_week").reset_index(drop=True)

@@ -9,7 +9,10 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
 
-from src.utils.pca import pick_n_components
+from src.utils.pca import (
+    pick_n_components,
+    weekly_snapshots,
+)
 
 
 # -------------------------------- pick_n_components ----------------------------
@@ -51,3 +54,50 @@ def test_pick_n_components_invalid_target_raises():
         pick_n_components(cum_var, target=1.5)
     with pytest.raises(ValueError, match=r"in \[0, 1\]"):
         pick_n_components(cum_var, target=-0.1)
+
+
+# -------------------------------- weekly_snapshots -----------------------------
+
+
+def test_weekly_snapshots_keeps_latest_per_week_per_permno():
+    """Within one ISO week, keep the latest-date row for each permno."""
+    df = pd.DataFrame({
+        "permno": [101, 101, 101, 202, 202],
+        "date": pd.to_datetime([
+            "2020-01-06",  # Mon week 2
+            "2020-01-08",  # Wed week 2
+            "2020-01-10",  # Fri week 2  <- keep for 101
+            "2020-01-07",  # Tue week 2
+            "2020-01-09",  # Thu week 2  <- keep for 202
+        ]),
+        "vec": [[1.0], [2.0], [3.0], [10.0], [20.0]],
+    })
+    out = weekly_snapshots(df)
+    assert len(out) == 2
+    assert out.loc[out["permno"] == 101, "date"].iloc[0] == pd.Timestamp("2020-01-10")
+    assert out.loc[out["permno"] == 202, "date"].iloc[0] == pd.Timestamp("2020-01-09")
+
+
+def test_weekly_snapshots_one_row_per_week_across_boundaries():
+    df = pd.DataFrame({
+        "permno": [101, 101, 101],
+        "date": pd.to_datetime([
+            "2020-01-10",  # Fri week 2
+            "2020-01-17",  # Fri week 3
+            "2020-01-24",  # Fri week 4
+        ]),
+        "vec": [[1.0], [2.0], [3.0]],
+    })
+    out = weekly_snapshots(df)
+    assert len(out) == 3
+
+
+def test_weekly_snapshots_multiple_permnos_same_week_all_kept():
+    df = pd.DataFrame({
+        "permno": [101, 202, 303],
+        "date": pd.to_datetime(["2020-01-08", "2020-01-09", "2020-01-10"]),
+        "vec": [[1.0], [2.0], [3.0]],
+    })
+    out = weekly_snapshots(df)
+    assert len(out) == 3
+    assert set(out["permno"]) == {101, 202, 303}
