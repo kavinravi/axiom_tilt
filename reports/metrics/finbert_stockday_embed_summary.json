@@ -1,0 +1,13 @@
+{
+  "total_stock_days": 2998336,
+  "permnos_covered": 579,
+  "date_range": [
+    "2000-01-03 00:00:00",
+    "2024-12-31 00:00:00"
+  ],
+  "hidden_dim": 768,
+  "window_days": 30,
+  "halflife_days": 14.0,
+  "doc_embed_dir": "data/processed/finbert_doc_embed",
+  "output_dir": "data/processed/finbert_stockday_embed"
+}

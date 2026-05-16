@@ -27,6 +27,8 @@ data/processed/crsp_daily/
 data/processed/panel/
 data/processed/sharadar_sf1.parquet
 data/processed/sharadar_tickers.parquet
+data/processed/finbert_doc_embed/
+data/processed/finbert_stockday_embed/
 data/archive/
 
 *.log

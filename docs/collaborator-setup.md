@@ -101,6 +101,10 @@ This downloads ~95-110 GB:
   reads this directory**, not v1.
 - Tokenized FinBERT dataset (`data/processed/finbert_tok/`)
 - Trained FinBERT model (`artifacts/finbert-mlm/`)
+- FinBERT document-level embeddings (`data/processed/finbert_doc_embed/`,
+  one 768-dim vector per filing — output of notebook 02)
+- FinBERT stock-day embeddings (`data/processed/finbert_stockday_embed/`,
+  a `(permno, date)` panel of 768-dim vectors — output of notebook 03)
 
 Run time: several hours on home internet, depending on your connection.
 Subsequent syncs are diff-only and fast.
