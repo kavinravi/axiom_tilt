@@ -10,6 +10,7 @@ import pyarrow.parquet as pq
 import pytest
 
 from src.utils.pca import (
+    assemble_training_matrix,
     filter_in_universe,
     pick_n_components,
     weekly_snapshots,
@@ -149,3 +150,80 @@ def test_filter_in_universe_drops_unknown_permno():
     panel = pd.DataFrame({"permno": [999], "date": pd.to_datetime(["2020-01-01"])})
     out = filter_in_universe(panel, _universe_ids_fixture())
     assert len(out) == 0
+
+
+# -------------------------------- assemble_training_matrix ---------------------
+
+
+def _write_embed_shard(out_dir: Path, year: int, permno: int, rows: list[dict]) -> None:
+    """Write a single per-permno year shard, matching notebook 03's output layout."""
+    part = out_dir / f"year={year}" / f"part-permno-{permno:08d}.parquet"
+    part.parent.mkdir(parents=True, exist_ok=True)
+    schema = pa.schema([
+        ("permno", pa.int64()),
+        ("date", pa.timestamp("ns")),
+        ("vec", pa.list_(pa.float32())),
+    ])
+    pq.write_table(pa.Table.from_pylist(rows, schema=schema), part)
+
+
+def test_assemble_training_matrix_filters_universe_window_and_resamples(tmp_path: Path):
+    rows_2007 = [
+        {"permno": 101, "date": pd.Timestamp("2007-06-07"), "vec": [0.0, 1.0, 0.0]},  # Thu
+        {"permno": 101, "date": pd.Timestamp("2007-06-08"), "vec": [1.0, 0.0, 0.0]},  # Fri (same week — wins)
+    ]
+    rows_2007_other = [
+        {"permno": 999, "date": pd.Timestamp("2007-06-08"), "vec": [9.0, 9.0, 9.0]},  # not in universe
+    ]
+    rows_2008 = [
+        {"permno": 101, "date": pd.Timestamp("2008-01-04"), "vec": [2.0, 0.0, 0.0]},  # outside window
+    ]
+    _write_embed_shard(tmp_path, 2007, 101, rows_2007)
+    _write_embed_shard(tmp_path, 2007, 999, rows_2007_other)
+    _write_embed_shard(tmp_path, 2008, 101, rows_2008)
+
+    universe_ids = pd.DataFrame({
+        "ticker": ["AAPL"],
+        "permno": pd.array([101], dtype="Int64"),
+        "date_in": pd.to_datetime(["2000-01-01"]),
+        "date_out": pd.to_datetime([None]),
+    })
+    X, meta = assemble_training_matrix(
+        embed_dir=tmp_path,
+        universe_ids=universe_ids,
+        start="2007-01-01",
+        end="2007-12-31",
+    )
+    assert X.shape == (1, 3)
+    assert X.dtype == np.float32
+    np.testing.assert_array_equal(X[0], [1.0, 0.0, 0.0])
+    assert len(meta) == 1
+    assert int(meta["permno"].iloc[0]) == 101
+    assert meta["date"].iloc[0] == pd.Timestamp("2007-06-08")
+
+
+def test_assemble_training_matrix_empty_match_returns_zero_rows(tmp_path: Path):
+    _write_embed_shard(tmp_path, 2007, 101, [
+        {"permno": 101, "date": pd.Timestamp("2007-06-08"), "vec": [1.0, 0.0]},
+    ])
+    # universe excludes 101
+    universe_ids = pd.DataFrame({
+        "ticker": ["X"],
+        "permno": pd.array([999], dtype="Int64"),
+        "date_in": pd.to_datetime(["2000-01-01"]),
+        "date_out": pd.to_datetime([None]),
+    })
+    X, meta = assemble_training_matrix(tmp_path, universe_ids, "2007-01-01", "2007-12-31")
+    assert X.shape == (0, 2)
+    assert len(meta) == 0
+
+
+def test_assemble_training_matrix_raises_when_no_shards(tmp_path: Path):
+    universe_ids = pd.DataFrame({
+        "ticker": ["AAPL"],
+        "permno": pd.array([101], dtype="Int64"),
+        "date_in": pd.to_datetime(["2000-01-01"]),
+        "date_out": pd.to_datetime([None]),
+    })
+    with pytest.raises(FileNotFoundError, match="no parquet shards"):
+        assemble_training_matrix(tmp_path, universe_ids, "2007-01-01", "2007-12-31")

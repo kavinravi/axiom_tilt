@@ -9,6 +9,8 @@ notebooks/04_pca_text_features.ipynb.
 """
 from __future__ import annotations
 
+from pathlib import Path
+
 import numpy as np
 import pandas as pd
 
@@ -65,5 +67,52 @@ def filter_in_universe(panel: pd.DataFrame, universe_ids: pd.DataFrame) -> pd.Da
         how="left",
     )
     in_window = (merged["date"] >= merged["date_in"]) & (merged["date"] <= merged["date_out"])
-    kept = merged[in_window][panel_cols].drop_duplicates().reset_index(drop=True)
+    # Dedup on (permno, date) — vec / other non-hashable payload columns can't be
+    # deduped by value. A panel row matches multiple intervals only if the intervals
+    # overlap, which universe_build forbids; this is a defensive backstop.
+    kept = merged[in_window][panel_cols].drop_duplicates(subset=["permno", "date"]).reset_index(drop=True)
     return kept
+
+
+def assemble_training_matrix(
+    embed_dir: Path,
+    universe_ids: pd.DataFrame,
+    start: str,
+    end: str,
+) -> tuple[np.ndarray, pd.DataFrame]:
+    """Read finbert_stockday_embed shards, gate to (window x universe), weekly resample.
+
+    Returns:
+      X:    float32 array, (n_samples, hidden_dim). Same row order as meta.
+      meta: DataFrame with permno and date for each row of X.
+    """
+    embed_dir = Path(embed_dir)
+    shards = sorted(embed_dir.glob("year=*/*.parquet"))
+    if not shards:
+        raise FileNotFoundError(f"no parquet shards under {embed_dir}")
+
+    start_ts, end_ts = pd.Timestamp(start), pd.Timestamp(end)
+    frames: list[pd.DataFrame] = []
+    for s in shards:
+        df = pd.read_parquet(s, columns=["permno", "date", "vec"])
+        df["date"] = pd.to_datetime(df["date"])
+        df = df[(df["date"] >= start_ts) & (df["date"] <= end_ts)]
+        if len(df):
+            frames.append(df)
+
+    # Hidden dim is needed even for the empty path so the caller's shape contract holds.
+    hidden = len(pd.read_parquet(shards[0], columns=["vec"])["vec"].iloc[0])
+
+    if not frames:
+        return np.empty((0, hidden), dtype=np.float32), pd.DataFrame(columns=["permno", "date"])
+
+    panel = pd.concat(frames, ignore_index=True)
+    panel = filter_in_universe(panel, universe_ids)
+    panel = weekly_snapshots(panel)
+
+    if len(panel) == 0:
+        return np.empty((0, hidden), dtype=np.float32), pd.DataFrame(columns=["permno", "date"])
+
+    X = np.stack([np.asarray(v, dtype=np.float32) for v in panel["vec"].values])
+    meta = panel[["permno", "date"]].reset_index(drop=True)
+    return X, meta
