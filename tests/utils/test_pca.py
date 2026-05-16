@@ -13,6 +13,7 @@ from src.utils.pca import (
     assemble_training_matrix,
     filter_in_universe,
     fit_pca_initial,
+    fit_pca_walk,
     pick_n_components,
     weekly_snapshots,
 )
@@ -256,3 +257,20 @@ def test_fit_pca_initial_higher_target_yields_more_components():
     n95, _, _ = fit_pca_initial(X, target=0.95)
     n99, _, _ = fit_pca_initial(X, target=0.99)
     assert n99 >= n95
+
+
+# -------------------------------- fit_pca_walk ---------------------------------
+
+
+def test_fit_pca_walk_locks_dim_and_reports_variance():
+    rng = np.random.RandomState(7)
+    X = rng.randn(500, 30).astype(np.float32)
+    pca, variance_captured = fit_pca_walk(X, n_pca=10)
+
+    assert pca.n_components_ == 10
+    assert 0.0 <= variance_captured <= 1.0
+    np.testing.assert_almost_equal(
+        variance_captured,
+        float(pca.explained_variance_ratio_.sum()),
+        decimal=6,
+    )

@@ -135,3 +135,14 @@ def fit_pca_initial(X: np.ndarray, target: float = 0.99) -> tuple[int, np.ndarra
     n_pca = pick_n_components(cum_var, target=target)
     pca = PCA(n_components=n_pca, svd_solver="full").fit(X)
     return n_pca, cum_var, pca
+
+
+def fit_pca_walk(X: np.ndarray, n_pca: int) -> tuple[PCA, float]:
+    """Per-walk re-fit at the locked dim. Returns (fitted_pca, variance_captured).
+
+    `variance_captured` is `explained_variance_ratio_.sum()` — the per-walk
+    drift sanity check from spec §17.2. If this falls noticeably below the
+    initial target across walks, the locked dim is becoming too tight.
+    """
+    pca = PCA(n_components=n_pca, svd_solver="full").fit(X)
+    return pca, float(pca.explained_variance_ratio_.sum())
