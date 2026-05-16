@@ -47,3 +47,23 @@ def weekly_snapshots(
     df = df.sort_values([permno_col, "_week", date_col])
     out = df.groupby([permno_col, "_week"], as_index=False).tail(1)
     return out.drop(columns="_week").reset_index(drop=True)
+
+
+def filter_in_universe(panel: pd.DataFrame, universe_ids: pd.DataFrame) -> pd.DataFrame:
+    """Keep panel rows where (permno, date) falls inside any universe interval.
+
+    NaT in date_out is treated as "still active" via a far-future sentinel.
+    A permno-date that matches multiple intervals (re-joins) is kept once.
+    """
+    panel_cols = list(panel.columns)
+    intervals = universe_ids.dropna(subset=["permno"]).copy()
+    intervals["permno"] = intervals["permno"].astype("int64")
+    intervals["date_out"] = intervals["date_out"].fillna(pd.Timestamp("2099-12-31"))
+    merged = panel.merge(
+        intervals[["permno", "date_in", "date_out"]],
+        on="permno",
+        how="left",
+    )
+    in_window = (merged["date"] >= merged["date_in"]) & (merged["date"] <= merged["date_out"])
+    kept = merged[in_window][panel_cols].drop_duplicates().reset_index(drop=True)
+    return kept

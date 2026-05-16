@@ -10,6 +10,7 @@ import pyarrow.parquet as pq
 import pytest
 
 from src.utils.pca import (
+    filter_in_universe,
     pick_n_components,
     weekly_snapshots,
 )
@@ -101,3 +102,50 @@ def test_weekly_snapshots_multiple_permnos_same_week_all_kept():
     out = weekly_snapshots(df)
     assert len(out) == 3
     assert set(out["permno"]) == {101, 202, 303}
+
+
+# -------------------------------- filter_in_universe ---------------------------
+
+
+def _universe_ids_fixture() -> pd.DataFrame:
+    """Three permnos: AAPL/GOOG open-ended, DROP with bounded window."""
+    return pd.DataFrame({
+        "ticker": ["AAPL", "GOOG", "DROP"],
+        "permno": pd.array([101, 202, 303], dtype="Int64"),
+        "date_in": pd.to_datetime(["2009-02-01", "2015-08-25", "2010-01-01"]),
+        "date_out": pd.to_datetime([None, None, "2012-12-31"]),
+    })
+
+
+def test_filter_in_universe_keeps_rows_inside_window():
+    panel = pd.DataFrame({
+        "permno": [101, 101, 202],
+        "date": pd.to_datetime(["2009-03-01", "2020-06-15", "2018-01-01"]),
+    })
+    out = filter_in_universe(panel, _universe_ids_fixture())
+    assert len(out) == 3
+
+
+def test_filter_in_universe_drops_rows_before_date_in():
+    panel = pd.DataFrame({"permno": [101], "date": pd.to_datetime(["2008-01-01"])})
+    out = filter_in_universe(panel, _universe_ids_fixture())
+    assert len(out) == 0
+
+
+def test_filter_in_universe_drops_rows_after_date_out():
+    panel = pd.DataFrame({"permno": [303], "date": pd.to_datetime(["2013-01-01"])})
+    out = filter_in_universe(panel, _universe_ids_fixture())
+    assert len(out) == 0
+
+
+def test_filter_in_universe_open_ended_window_keeps_current_dates():
+    """date_out=NaT means active; rows after date_in are kept."""
+    panel = pd.DataFrame({"permno": [101], "date": pd.to_datetime(["2099-01-01"])})
+    out = filter_in_universe(panel, _universe_ids_fixture())
+    assert len(out) == 1
+
+
+def test_filter_in_universe_drops_unknown_permno():
+    panel = pd.DataFrame({"permno": [999], "date": pd.to_datetime(["2020-01-01"])})
+    out = filter_in_universe(panel, _universe_ids_fixture())
+    assert len(out) == 0
