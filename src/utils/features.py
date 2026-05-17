@@ -25,3 +25,34 @@ def pivot_macro_wide(
     if ffill_dates is not None:
         wide = wide.reindex(ffill_dates).ffill()
     return wide.reset_index().rename(columns={'index': 'date'})
+
+
+def compute_forward_returns(
+    panel: pd.DataFrame,
+    horizons: tuple[int, ...] = (1, 5),
+    ret_col: str = 'ret',
+    permno_col: str = 'permno',
+    date_col: str = 'date',
+) -> pd.DataFrame:
+    """Compute `fwd_ret_{h}d` for each horizon h (trading days).
+
+    For each permno, sorts by date and computes compounded forward returns over
+    the next `h` rows via log-return rolling sum (vectorized, no apply).
+    Rows in the last `h` of a permno's history get NaN. Delisted permnos
+    naturally produce NaN at the tail.
+
+    Returns the input panel with new `fwd_ret_{h}d` columns appended.
+    """
+    out = panel.sort_values([permno_col, date_col]).copy()
+    log_ret = np.log1p(out[ret_col].astype(float))
+    for h in horizons:
+        # Forward sum of log-returns over horizon h, then expm1.
+        # Rolling-sum at index t covers t-h+1..t; we want t+1..t+h, so shift -h.
+        rolling_sum = (
+            log_ret.groupby(out[permno_col])
+            .rolling(window=h, min_periods=h)
+            .sum()
+            .reset_index(level=0, drop=True)
+        )
+        out[f'fwd_ret_{h}d'] = np.expm1(rolling_sum.groupby(out[permno_col]).shift(-h))
+    return out.reset_index(drop=True)
