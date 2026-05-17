@@ -11,7 +11,7 @@ from typing import Any
 import joblib
 import numpy as np
 import pandas as pd
-from lightgbm import LGBMRanker
+from lightgbm import LGBMRanker, LGBMRegressor
 from sklearn.decomposition import PCA
 
 from src.utils.io import repo_root
@@ -146,6 +146,59 @@ def build_ranker(params: dict | None = None) -> LGBMRanker:
     """`LGBMRanker` factory with lambdarank defaults; `params` overrides."""
     merged = {**DEFAULT_RANKER_PARAMS, **(params or {})}
     return LGBMRanker(**merged)
+
+
+DEFAULT_REGRESSOR_PARAMS: dict[str, Any] = {
+    'objective': 'regression',
+    'metric': 'rmse',
+    'num_leaves': 63,
+    'learning_rate': 0.05,
+    'n_estimators': 500,
+    'feature_fraction': 0.9,
+    'bagging_fraction': 0.9,
+    'bagging_freq': 5,
+    'min_data_in_leaf': 50,
+    'lambda_l2': 1.0,
+    'random_state': 42,
+    'n_jobs': -1,
+    'verbose': -1,
+}
+
+
+def build_regressor(params: dict | None = None) -> LGBMRegressor:
+    """`LGBMRegressor` factory for the alternative head (predicts continuous
+    excess return, then we rank predictions)."""
+    merged = {**DEFAULT_REGRESSOR_PARAMS, **(params or {})}
+    return LGBMRegressor(**merged)
+
+
+def compute_grouped_ndcg(
+    scores: np.ndarray,
+    labels: np.ndarray,
+    group_sizes: list[int],
+    k: int = 30,
+) -> float:
+    """Mean per-group NDCG@k. `labels` are integer relevance grades (0..n)."""
+    ndcgs: list[float] = []
+    idx = 0
+    for g in group_sizes:
+        s = scores[idx:idx + g]
+        t = np.asarray(labels[idx:idx + g], dtype=np.float64)
+        kk = min(k, g)
+        # Discount: 1 / log2(rank + 2), rank starts at 0
+        discounts = 1.0 / np.log2(np.arange(kk) + 2)
+        # Actual: top-k by predicted score
+        top_k_by_score = np.argsort(s)[::-1][:kk]
+        actual_gains = (2.0 ** t[top_k_by_score]) - 1.0
+        dcg = float((actual_gains * discounts).sum())
+        # Ideal: top-k by true label
+        ideal_top = np.sort(t)[::-1][:kk]
+        ideal_gains = (2.0 ** ideal_top) - 1.0
+        idcg = float((ideal_gains * discounts).sum())
+        if idcg > 0:
+            ndcgs.append(dcg / idcg)
+        idx += g
+    return float(np.mean(ndcgs)) if ndcgs else 0.0
 
 
 def evaluate_ranker(

@@ -10,7 +10,9 @@ from sklearn.decomposition import PCA
 from src.utils.ranker import (
     assemble_walk_features,
     build_ranker,
+    build_regressor,
     compute_excess_return_buckets,
+    compute_grouped_ndcg,
     drop_zero_info_columns,
     evaluate_ranker,
     friday_only,
@@ -202,3 +204,33 @@ def test_evaluate_ranker_returns_metric_dict_with_required_keys():
     entity_ids = np.tile(np.arange(n_per_date), n_dates)  # same entities every date
     out2 = evaluate_ranker(model, X, y_excess, group_dates, top_k=10, entity_ids=entity_ids)
     assert 0.0 <= out2['top_k_jaccard'] <= 1.0
+
+
+# -------------------------------- build_regressor ------------------------------
+
+
+def test_build_regressor_returns_lgbm_regressor_with_regression_objective():
+    from lightgbm import LGBMRegressor
+    reg = build_regressor({'num_leaves': 31, 'n_estimators': 50})
+    assert isinstance(reg, LGBMRegressor)
+    assert reg.objective == 'regression'
+    assert reg.num_leaves == 31
+
+
+# -------------------------------- compute_grouped_ndcg -------------------------
+
+
+def test_compute_grouped_ndcg_perfect_ranking_is_one():
+    # Two groups; in each, scores perfectly match labels (descending).
+    scores = np.array([3.0, 2.0, 1.0, 0.0, 4.0, 3.0, 2.0, 1.0, 0.0])
+    labels = np.array([3,   2,   1,   0,   4,   3,   2,   1,   0])
+    groups = [4, 5]
+    out = compute_grouped_ndcg(scores, labels, groups, k=3)
+    assert out == pytest.approx(1.0, abs=1e-9)
+
+
+def test_compute_grouped_ndcg_reversed_ranking_is_below_one():
+    scores = np.array([0.0, 1.0, 2.0, 3.0])  # worst-first when sorted desc
+    labels = np.array([3,   2,   1,   0])
+    out = compute_grouped_ndcg(scores, labels, [4], k=4)
+    assert 0.0 <= out < 1.0
