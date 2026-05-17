@@ -104,10 +104,12 @@ class PortfolioEnv(gym.Env):
         self._by_date: dict = {d: g.reset_index(drop=True)
                                for d, g in self.scoreboard.groupby('date', sort=True)}
 
-        # Finite, symmetric bounds per SB3 recommendation. Softmax handles any input
-        # but PPO outputs roughly tanh-shaped actions, so [-1, 1] is the natural range.
+        # Action range [-5, +5] (wider than SB3-recommended [-1, 1]) gives the
+        # policy room to express sharp conviction: softmax([5, -5, ..., -5])
+        # concentrates ~99% weight on one stock, vs ~10% under [-1, 1]. Needed
+        # so PPO can match or exceed score-proportional weighting in expression.
         self.action_space = spaces.Box(
-            low=-1.0, high=1.0, shape=(self.top_k,), dtype=np.float32,
+            low=-5.0, high=5.0, shape=(self.top_k,), dtype=np.float32,
         )
         # Wide finite bounds for observation; post-VecNormalize values stay within ~10.
         self.observation_space = spaces.Box(
