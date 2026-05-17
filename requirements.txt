@@ -18,6 +18,7 @@ datasets>=3.0
 lightgbm>=4.5
 xgboost>=2.1
 scikit-learn>=1.5
+optuna>=3.5
 
 # RL
 d3rlpy>=2.6

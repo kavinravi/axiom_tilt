@@ -9,7 +9,9 @@ from sklearn.decomposition import PCA
 
 from src.utils.ranker import (
     assemble_walk_features,
+    build_ranker,
     compute_excess_return_buckets,
+    evaluate_ranker,
     friday_only,
     load_walk_pca,
     project_text_to_pca,
@@ -140,3 +142,39 @@ def test_assemble_walk_features_drops_non_friday_rows():
     X, y, groups, meta = assemble_walk_features(panel, embed_pca)
     assert len(X) == 1
     assert meta['date'].iloc[0] == pd.Timestamp('2020-01-03')
+
+
+# -------------------------------- build_ranker ---------------------------------
+
+
+def test_build_ranker_returns_lgbm_ranker_with_lambdarank_defaults():
+    from lightgbm import LGBMRanker
+    model = build_ranker({'num_leaves': 31, 'learning_rate': 0.05, 'n_estimators': 50})
+    assert isinstance(model, LGBMRanker)
+    assert model.objective == 'lambdarank'
+    assert model.num_leaves == 31
+
+
+# -------------------------------- evaluate_ranker ------------------------------
+
+
+def test_evaluate_ranker_returns_metric_dict_with_required_keys():
+    from lightgbm import LGBMRanker
+    rng = np.random.RandomState(0)
+    n_dates, n_per_date = 5, 40
+    X = rng.randn(n_dates * n_per_date, 8).astype(np.float32)
+    y_excess = X[:, 0] * 0.5 + rng.randn(len(X)) * 0.1
+    groups = [n_per_date] * n_dates
+    dates = pd.to_datetime([f'2020-01-{i * 7 + 3:02d}' for i in range(n_dates)])
+    group_dates = np.repeat(dates.to_numpy(), n_per_date)
+
+    pct = pd.Series(y_excess).groupby(group_dates).rank(pct=True)
+    labels = np.floor(pct * 4).clip(upper=3).astype(int).values
+    model = LGBMRanker(objective='lambdarank', n_estimators=100, verbose=-1)
+    model.fit(X, labels, group=groups)
+
+    out = evaluate_ranker(model, X, y_excess, group_dates, top_k=10)
+    for k in ('rank_ic_mean', 'rank_ic_ir', 'decile_spread_bps',
+              'hit_rate', 'top_k_jaccard'):
+        assert k in out
+    assert isinstance(out['rank_ic_mean'], float)

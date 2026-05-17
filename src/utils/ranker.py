@@ -6,10 +6,12 @@ layer. See docs/superpowers/specs/2026-05-16-supervised-ranker-design.md.
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 import joblib
 import numpy as np
 import pandas as pd
+from lightgbm import LGBMRanker
 from sklearn.decomposition import PCA
 
 
@@ -96,3 +98,96 @@ def assemble_walk_features(
     groups = merged.groupby(date_col, sort=False).size().tolist()
     meta = merged[['permno', date_col, target_col]].copy()
     return X, y, groups, meta
+
+
+DEFAULT_RANKER_PARAMS: dict[str, Any] = {
+    'objective': 'lambdarank',
+    'metric': 'ndcg',
+    'num_leaves': 63,
+    'learning_rate': 0.05,
+    'n_estimators': 500,
+    'feature_fraction': 0.9,
+    'bagging_fraction': 0.9,
+    'bagging_freq': 5,
+    'min_data_in_leaf': 50,
+    'lambda_l2': 1.0,
+    'random_state': 42,
+    'n_jobs': -1,
+    'verbose': -1,
+}
+
+
+def build_ranker(params: dict | None = None) -> LGBMRanker:
+    """`LGBMRanker` factory with lambdarank defaults; `params` overrides."""
+    merged = {**DEFAULT_RANKER_PARAMS, **(params or {})}
+    return LGBMRanker(**merged)
+
+
+def evaluate_ranker(
+    model: LGBMRanker,
+    X: np.ndarray | pd.DataFrame,
+    y_excess: np.ndarray | pd.Series,
+    group_dates: np.ndarray | pd.Series,
+    top_k: int = 30,
+) -> dict[str, float]:
+    """Compute per-group rank IC + decile spread + hit rate + top-K Jaccard.
+
+    Returns a dict with keys: rank_ic_mean, rank_ic_ir, decile_spread_bps,
+    hit_rate, top_k_jaccard. All values are floats (NaN where ill-defined).
+    """
+    scores = model.predict(X)
+    df = pd.DataFrame({
+        'score': np.asarray(scores, dtype=np.float64),
+        'y_excess': np.asarray(y_excess, dtype=np.float64),
+        'date': pd.to_datetime(np.asarray(group_dates)),
+    })
+
+    # Per-date Spearman IC.
+    ics = (df.groupby('date', sort=True)
+           .apply(lambda g: g['score'].corr(g['y_excess'], method='spearman'),
+                  include_groups=False)
+           .dropna())
+    rank_ic_mean = float(ics.mean()) if len(ics) else float('nan')
+    rank_ic_ir = (float(ics.mean() / ics.std())
+                  if len(ics) > 1 and ics.std() > 0 else float('nan'))
+
+    # Per-date decile spread (top - bottom decile mean), then mean across dates, in bps.
+    def _decile_spread(g: pd.DataFrame) -> float:
+        if len(g) < 10:
+            return float('nan')
+        d = pd.qcut(g['score'], 10, labels=False, duplicates='drop')
+        top_mask = d == d.max()
+        bot_mask = d == d.min()
+        return float(g.loc[top_mask, 'y_excess'].mean()
+                     - g.loc[bot_mask, 'y_excess'].mean())
+    spreads = df.groupby('date').apply(_decile_spread, include_groups=False).dropna()
+    decile_spread_bps = float(spreads.mean() * 1e4) if len(spreads) else float('nan')
+
+    # Hit rate: fraction of dates with top-K mean > bottom-K mean.
+    def _hit(g: pd.DataFrame) -> float:
+        if len(g) < 2 * top_k:
+            return float('nan')
+        s = g.sort_values('score', ascending=False)
+        return float(s.head(top_k)['y_excess'].mean()
+                     > s.tail(top_k)['y_excess'].mean())
+    hits = df.groupby('date').apply(_hit, include_groups=False).dropna()
+    hit_rate = float(hits.mean()) if len(hits) else float('nan')
+
+    # Top-K Jaccard between consecutive dates' top-K sets (by row id).
+    df_sorted = df.sort_values(['date', 'score'], ascending=[True, False])
+    top_k_sets = {d: set(g.head(top_k).index) for d, g in df_sorted.groupby('date')}
+    dates_sorted = sorted(top_k_sets)
+    jaccards = []
+    for d1, d2 in zip(dates_sorted, dates_sorted[1:]):
+        s1, s2 = top_k_sets[d1], top_k_sets[d2]
+        if s1 or s2:
+            jaccards.append(len(s1 & s2) / len(s1 | s2))
+    top_k_jaccard = float(np.mean(jaccards)) if jaccards else float('nan')
+
+    return {
+        'rank_ic_mean': rank_ic_mean,
+        'rank_ic_ir': rank_ic_ir,
+        'decile_spread_bps': decile_spread_bps,
+        'hit_rate': hit_rate,
+        'top_k_jaccard': top_k_jaccard,
+    }
