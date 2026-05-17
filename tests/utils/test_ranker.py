@@ -8,6 +8,7 @@ import pytest
 from sklearn.decomposition import PCA
 
 from src.utils.ranker import (
+    assemble_walk_features,
     compute_excess_return_buckets,
     friday_only,
     load_walk_pca,
@@ -86,3 +87,56 @@ def test_compute_excess_return_buckets_drops_nan_rows():
     })
     out = compute_excess_return_buckets(df, n_buckets=2)
     assert pd.isna(out.iloc[1])
+
+
+# -------------------------------- assemble_walk_features -----------------------
+
+
+def test_assemble_walk_features_joins_panel_and_pca_drops_non_features():
+    # 2020-01-03 and 2020-01-10 are both Fridays.
+    panel = pd.DataFrame({
+        'permno': [101, 102, 101, 102],
+        'date': pd.to_datetime(['2020-01-03'] * 2 + ['2020-01-10'] * 2),
+        'cik': ['a', 'b', 'a', 'b'],
+        'ret': [0.01, 0.02, 0.0, 0.01],
+        'ticker': ['A', 'B', 'A', 'B'],
+        'fwd_ret_5d': [0.01, 0.02, 0.0, 0.01],
+        'macro_vixcls': [20.0, 20.0, 22.0, 22.0],
+        'text_novelty': [0.1, 0.2, 0.15, 0.25],
+        'feature_x': [1.0, 2.0, 3.0, 4.0],
+    })
+    embed_pca = pd.DataFrame({
+        'permno': [101, 102, 101, 102],
+        'date': pd.to_datetime(['2020-01-03'] * 2 + ['2020-01-10'] * 2),
+        'pca_0': [0.5, 0.6, 0.7, 0.8],
+        'pca_1': [1.0, 1.1, 1.2, 1.3],
+    })
+    X, y, groups, meta = assemble_walk_features(panel, embed_pca)
+    # Non-feature columns dropped from X
+    for col in ('permno', 'date', 'cik', 'ret', 'ticker', 'fwd_ret_5d'):
+        assert col not in X.columns
+    assert {'pca_0', 'pca_1', 'macro_vixcls', 'text_novelty', 'feature_x'} <= set(X.columns)
+    assert len(X) == len(y) == 4
+    assert groups == [2, 2]
+    assert {'permno', 'date', 'fwd_ret_5d'} <= set(meta.columns)
+
+
+def test_assemble_walk_features_drops_non_friday_rows():
+    # Mix Friday and non-Friday rows.
+    panel = pd.DataFrame({
+        'permno': [101, 101],
+        'date': pd.to_datetime(['2020-01-03', '2020-01-06']),  # Fri, Mon
+        'cik': ['a', 'a'],
+        'ret': [0.0, 0.0],
+        'ticker': ['A', 'A'],
+        'fwd_ret_5d': [0.01, 0.02],
+        'feature_x': [1.0, 2.0],
+    })
+    embed_pca = pd.DataFrame({
+        'permno': [101, 101],
+        'date': pd.to_datetime(['2020-01-03', '2020-01-06']),
+        'pca_0': [0.5, 0.6],
+    })
+    X, y, groups, meta = assemble_walk_features(panel, embed_pca)
+    assert len(X) == 1
+    assert meta['date'].iloc[0] == pd.Timestamp('2020-01-03')
