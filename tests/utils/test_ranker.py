@@ -190,8 +190,15 @@ def test_evaluate_ranker_returns_metric_dict_with_required_keys():
     model = LGBMRanker(objective='lambdarank', n_estimators=100, verbose=-1)
     model.fit(X, labels, group=groups)
 
+    # Without entity_ids: jaccard is NaN by design.
     out = evaluate_ranker(model, X, y_excess, group_dates, top_k=10)
     for k in ('rank_ic_mean', 'rank_ic_ir', 'decile_spread_bps',
               'hit_rate', 'top_k_jaccard'):
         assert k in out
     assert isinstance(out['rank_ic_mean'], float)
+    assert pd.isna(out['top_k_jaccard'])
+
+    # With entity_ids: jaccard is a real number in [0, 1].
+    entity_ids = np.tile(np.arange(n_per_date), n_dates)  # same entities every date
+    out2 = evaluate_ranker(model, X, y_excess, group_dates, top_k=10, entity_ids=entity_ids)
+    assert 0.0 <= out2['top_k_jaccard'] <= 1.0

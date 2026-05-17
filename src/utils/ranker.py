@@ -154,17 +154,21 @@ def evaluate_ranker(
     y_excess: np.ndarray | pd.Series,
     group_dates: np.ndarray | pd.Series,
     top_k: int = 30,
+    entity_ids: np.ndarray | pd.Series | None = None,
 ) -> dict[str, float]:
     """Compute per-group rank IC + decile spread + hit rate + top-K Jaccard.
 
-    Returns a dict with keys: rank_ic_mean, rank_ic_ir, decile_spread_bps,
-    hit_rate, top_k_jaccard. All values are floats (NaN where ill-defined).
+    `entity_ids` (e.g., permno) is required for meaningful top-K Jaccard
+    stability. Without it, the Jaccard metric is NaN (row indices never
+    overlap across dates so Jaccard would always be 0, which is misleading).
     """
     scores = model.predict(X)
     df = pd.DataFrame({
         'score': np.asarray(scores, dtype=np.float64),
         'y_excess': np.asarray(y_excess, dtype=np.float64),
         'date': pd.to_datetime(np.asarray(group_dates)),
+        'entity': (np.asarray(entity_ids) if entity_ids is not None
+                   else np.arange(len(scores))),
     })
 
     # Per-date Spearman IC.
@@ -198,16 +202,20 @@ def evaluate_ranker(
     hits = df.groupby('date').apply(_hit, include_groups=False).dropna()
     hit_rate = float(hits.mean()) if len(hits) else float('nan')
 
-    # Top-K Jaccard between consecutive dates' top-K sets (by row id).
-    df_sorted = df.sort_values(['date', 'score'], ascending=[True, False])
-    top_k_sets = {d: set(g.head(top_k).index) for d, g in df_sorted.groupby('date')}
-    dates_sorted = sorted(top_k_sets)
-    jaccards = []
-    for d1, d2 in zip(dates_sorted, dates_sorted[1:]):
-        s1, s2 = top_k_sets[d1], top_k_sets[d2]
-        if s1 or s2:
-            jaccards.append(len(s1 & s2) / len(s1 | s2))
-    top_k_jaccard = float(np.mean(jaccards)) if jaccards else float('nan')
+    # Top-K Jaccard between consecutive dates' top-K sets (by entity_id, e.g. permno).
+    # Without entity_ids the metric is meaningless (row indices never overlap), so NaN.
+    if entity_ids is None:
+        top_k_jaccard = float('nan')
+    else:
+        df_sorted = df.sort_values(['date', 'score'], ascending=[True, False])
+        top_k_sets = {d: set(g.head(top_k)['entity']) for d, g in df_sorted.groupby('date')}
+        dates_sorted = sorted(top_k_sets)
+        jaccards = []
+        for d1, d2 in zip(dates_sorted, dates_sorted[1:]):
+            s1, s2 = top_k_sets[d1], top_k_sets[d2]
+            if s1 or s2:
+                jaccards.append(len(s1 & s2) / len(s1 | s2))
+        top_k_jaccard = float(np.mean(jaccards)) if jaccards else float('nan')
 
     return {
         'rank_ic_mean': rank_ic_mean,
