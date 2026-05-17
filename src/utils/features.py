@@ -107,9 +107,10 @@ def compute_days_since_filing(
     Returns the panel with `days_since_filing` (int or NaN if no prior filing).
     Uses `merge_asof` (left, by cik, on filing_date) for vectorized lookup.
     """
-    f = filings[filings['form_type'].isin(form_types)][['cik', 'filing_date']].copy()
-    f = f.sort_values(['cik', 'filing_date'])
-    p = panel.sort_values(['cik', 'date']).copy()
+    f = (filings[filings['form_type'].isin(form_types)][['cik', 'filing_date']]
+         .sort_values('filing_date'))
+    # merge_asof requires the global `on` column to be monotonic; sort by date.
+    p = panel[['permno', 'cik', 'date']].sort_values('date').reset_index(drop=True)
     merged = pd.merge_asof(
         p,
         f.rename(columns={'filing_date': 'last_filing_date'}),
@@ -118,10 +119,12 @@ def compute_days_since_filing(
         by='cik',
         direction='backward',
     )
-    delta = (merged['date'] - merged['last_filing_date']).dt.days
-    out = panel[['permno', 'date']].copy()
-    out['days_since_filing'] = delta.values
-    return out
+    merged['days_since_filing'] = (merged['date'] - merged['last_filing_date']).dt.days
+    # Re-align to the input panel's row order via key-join (not positional).
+    return panel[['permno', 'date']].merge(
+        merged[['permno', 'date', 'days_since_filing']],
+        on=['permno', 'date'], how='left',
+    )
 
 
 def compute_doc_count_window(

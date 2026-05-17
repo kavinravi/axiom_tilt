@@ -1,0 +1,211 @@
+{
+  "years": [
+    {
+      "year": 2002,
+      "n_rows": 77708,
+      "n_permnos": 311,
+      "nan_rate_text_novelty": 0.09959077572450713,
+      "nan_rate_days_since_filing": 0.06955525814587944,
+      "nan_rate_fwd_ret_5d": 6.434343954290421e-05,
+      "status": "written"
+    },
+    {
+      "year": 2003,
+      "n_rows": 78372,
+      "n_permnos": 311,
+      "nan_rate_text_novelty": 0.08813096514061144,
+      "nan_rate_days_since_filing": 0.05818404532230899,
+      "nan_rate_fwd_ret_5d": 0.0,
+      "status": "written"
+    },
+    {
+      "year": 2004,
+      "n_rows": 79219,
+      "n_permnos": 317,
+      "nan_rate_text_novelty": 0.09540640502909656,
+      "nan_rate_days_since_filing": 0.0577891667403022,
+      "nan_rate_fwd_ret_5d": 0.0,
+      "status": "written"
+    },
+    {
+      "year": 2005,
+      "n_rows": 80428,
+      "n_permnos": 323,
+      "nan_rate_text_novelty": 0.08623862336499727,
+      "nan_rate_days_since_filing": 0.05996667827124882,
+      "nan_rate_fwd_ret_5d": 0.003095936738449296,
+      "status": "written"
+    },
+    {
+      "year": 2006,
+      "n_rows": 80835,
+      "n_permnos": 325,
+      "nan_rate_text_novelty": 0.08493845487721903,
+      "nan_rate_days_since_filing": 0.054506092657883344,
+      "nan_rate_fwd_ret_5d": 0.0020411950269066618,
+      "status": "written"
+    },
+    {
+      "year": 2007,
+      "n_rows": 82282,
+      "n_permnos": 335,
+      "nan_rate_text_novelty": 0.08286137915947595,
+      "nan_rate_days_since_filing": 0.048516078850781456,
+      "nan_rate_fwd_ret_5d": 0.0,
+      "status": "written"
+    },
+    {
+      "year": 2008,
+      "n_rows": 84970,
+      "n_permnos": 339,
+      "nan_rate_text_novelty": 0.07505001765328939,
+      "nan_rate_days_since_filing": 0.04466282217253148,
+      "nan_rate_fwd_ret_5d": 5.884429798752501e-05,
+      "status": "written"
+    },
+    {
+      "year": 2009,
+      "n_rows": 85926,
+      "n_permnos": 348,
+      "nan_rate_text_novelty": 0.07539045224961013,
+      "nan_rate_days_since_filing": 0.04509694388194493,
+      "nan_rate_fwd_ret_5d": 0.0002327584200358448,
+      "status": "written"
+    },
+    {
+      "year": 2010,
+      "n_rows": 87158,
+      "n_permnos": 351,
+      "nan_rate_text_novelty": 0.08086463663691228,
+      "nan_rate_days_since_filing": 0.0467541705867505,
+      "nan_rate_fwd_ret_5d": 0.002088161729273274,
+      "status": "written"
+    },
+    {
+      "year": 2011,
+      "n_rows": 89145,
+      "n_permnos": 364,
+      "nan_rate_text_novelty": 0.07739076785013181,
+      "nan_rate_days_since_filing": 0.050860956868024006,
+      "nan_rate_fwd_ret_5d": 0.0001121767906220203,
+      "status": "written"
+    },
+    {
+      "year": 2012,
+      "n_rows": 91771,
+      "n_permnos": 374,
+      "nan_rate_text_novelty": 0.09136873304202853,
+      "nan_rate_days_since_filing": 0.053241219993244056,
+      "nan_rate_fwd_ret_5d": 0.0001634503274454893,
+      "status": "written"
+    },
+    {
+      "year": 2013,
+      "n_rows": 94397,
+      "n_permnos": 386,
+      "nan_rate_text_novelty": 0.07295782704958843,
+      "nan_rate_days_since_filing": 0.04226829242454739,
+      "nan_rate_fwd_ret_5d": 0.00042374227994533727,
+      "status": "written"
+    },
+    {
+      "year": 2014,
+      "n_rows": 95966,
+      "n_permnos": 387,
+      "nan_rate_text_novelty": 0.06901402580080446,
+      "nan_rate_days_since_filing": 0.038482379175958155,
+      "nan_rate_fwd_ret_5d": 0.00020840714419690306,
+      "status": "written"
+    },
+    {
+      "year": 2015,
+      "n_rows": 98560,
+      "n_permnos": 402,
+      "nan_rate_text_novelty": 0.06611201298701298,
+      "nan_rate_days_since_filing": 0.035430194805194805,
+      "nan_rate_fwd_ret_5d": 0.00038555194805194807,
+      "status": "written"
+    },
+    {
+      "year": 2016,
+      "n_rows": 102628,
+      "n_permnos": 420,
+      "nan_rate_text_novelty": 0.061825232879915815,
+      "nan_rate_days_since_filing": 0.031823673851190705,
+      "nan_rate_fwd_ret_5d": 0.00026308609736134386,
+      "status": "written"
+    },
+    {
+      "year": 2017,
+      "n_rows": 105449,
+      "n_permnos": 435,
+      "nan_rate_text_novelty": 0.05690902711263265,
+      "nan_rate_days_since_filing": 0.02587032593955372,
+      "nan_rate_fwd_ret_5d": 0.0005215791520071314,
+      "status": "written"
+    },
+    {
+      "year": 2018,
+      "n_rows": 107547,
+      "n_permnos": 440,
+      "nan_rate_text_novelty": 0.05650552781574567,
+      "nan_rate_days_since_filing": 0.021302314336987548,
+      "nan_rate_fwd_ret_5d": 0.00023245650738746781,
+      "status": "written"
+    },
+    {
+      "year": 2019,
+      "n_rows": 110494,
+      "n_permnos": 455,
+      "nan_rate_text_novelty": 0.04482596340072764,
+      "nan_rate_days_since_filing": 0.013285789273625717,
+      "nan_rate_fwd_ret_5d": 0.00045251325863847813,
+      "status": "written"
+    },
+    {
+      "year": 2020,
+      "n_rows": 113904,
+      "n_permnos": 461,
+      "nan_rate_text_novelty": 0.04081507234162102,
+      "nan_rate_days_since_filing": 0.009349978929624947,
+      "nan_rate_fwd_ret_5d": 0.00035117291754459897,
+      "status": "written"
+    },
+    {
+      "year": 2021,
+      "n_rows": 115636,
+      "n_permnos": 472,
+      "nan_rate_text_novelty": 0.04308346881593967,
+      "nan_rate_days_since_filing": 0.007558199868553046,
+      "nan_rate_fwd_ret_5d": 0.0004756304265107752,
+      "status": "written"
+    },
+    {
+      "year": 2022,
+      "n_rows": 117133,
+      "n_permnos": 478,
+      "nan_rate_text_novelty": 0.037453151545678846,
+      "nan_rate_days_since_filing": 0.005677306992905501,
+      "nan_rate_fwd_ret_5d": 0.0002134325937182519,
+      "status": "written"
+    },
+    {
+      "year": 2023,
+      "n_rows": 119024,
+      "n_permnos": 488,
+      "nan_rate_text_novelty": 0.04168907111170856,
+      "nan_rate_days_since_filing": 0.005830756822153515,
+      "nan_rate_fwd_ret_5d": 0.000361271676300578,
+      "status": "written"
+    },
+    {
+      "year": 2024,
+      "n_rows": 120964,
+      "n_permnos": 496,
+      "nan_rate_text_novelty": 0.039929235144340464,
+      "nan_rate_days_since_filing": 0.004158261962236698,
+      "nan_rate_fwd_ret_5d": 0.02050196752752885,
+      "status": "written"
+    }
+  ]
+}
