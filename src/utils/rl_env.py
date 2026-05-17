@@ -92,6 +92,11 @@ class PortfolioEnv(gym.Env):
         episode_length: int = 52,
         cost_bps: float = 5.0,
         max_weight: float = 0.10,
+        reward_type: str = 'excess_return',
+        sharpe_window: int = 8,
+        downside_lambda: float = 5.0,
+        action_high: float = 5.0,
+        score_bias: float = 0.0,
     ):
         super().__init__()
         self.scoreboard = scoreboard.sort_values('date').reset_index(drop=True)
@@ -99,17 +104,30 @@ class PortfolioEnv(gym.Env):
         self.episode_length = int(episode_length)
         self.cost_bps = float(cost_bps)
         self.max_weight = float(max_weight)
+        # Reward variants:
+        #   'excess_return'    : alpha vs equal-weight top-K (default)
+        #   'sharpe'           : rolling Sharpe proxy of excess_return over `sharpe_window`
+        #   'sharpe_total'     : rolling Sharpe proxy of portfolio_return (not excess) — aligns w/ backtest metric
+        #   'return_only'      : raw portfolio return (no alpha subtraction)
+        #   'downside_penalty' : excess_return - downside_lambda * max(0, -portfolio_return)
+        self.reward_type = str(reward_type)
+        self.sharpe_window = int(sharpe_window)
+        self.downside_lambda = float(downside_lambda)
+        self.action_high = float(action_high)
+        # score_bias: if > 0, env adds `score_bias * z_scores` to the policy's
+        # action before projection. score_bias=1 + zero action ≈ Score-Prop.
+        # Implicit behavior-cloning warm-start — PPO starts at Score-Prop and learns deviations.
+        self.score_bias = float(score_bias)
 
         self._dates = np.array(sorted(self.scoreboard['date'].unique()))
         self._by_date: dict = {d: g.reset_index(drop=True)
                                for d, g in self.scoreboard.groupby('date', sort=True)}
 
-        # Action range [-5, +5] (wider than SB3-recommended [-1, 1]) gives the
-        # policy room to express sharp conviction: softmax([5, -5, ..., -5])
-        # concentrates ~99% weight on one stock, vs ~10% under [-1, 1]. Needed
-        # so PPO can match or exceed score-proportional weighting in expression.
+        # Action bounds (symmetric, finite per SB3 recommendation). Default 5.0
+        # gives softmax room to concentrate ~99% on one stock; 10.0 even sharper.
         self.action_space = spaces.Box(
-            low=-5.0, high=5.0, shape=(self.top_k,), dtype=np.float32,
+            low=-self.action_high, high=self.action_high,
+            shape=(self.top_k,), dtype=np.float32,
         )
         # Wide finite bounds for observation; post-VecNormalize values stay within ~10.
         self.observation_space = spaces.Box(
@@ -121,6 +139,7 @@ class PortfolioEnv(gym.Env):
         self._steps = 0
         self._weights = np.full(self.top_k, 1.0 / self.top_k, dtype=np.float32)
         self._last_return = 0.0
+        self._return_history: list = []  # for sharpe-style reward
 
     def reset(self, seed=None, options=None):
         super().reset(seed=seed)
@@ -129,22 +148,60 @@ class PortfolioEnv(gym.Env):
         self._steps = 0
         self._weights = np.full(self.top_k, 1.0 / self.top_k, dtype=np.float32)
         self._last_return = 0.0
+        self._return_history = []
         return self._build_obs(), {}
 
     def step(self, action: np.ndarray):
         cur = self._by_date[self._dates[self._idx]]
+        if self.score_bias > 0:
+            # RAW scores (matches Score-Prop baseline = softmax(raw_scores)).
+            # With score_bias=1 and action=0, action_biased = scores → softmax = Score-Prop.
+            scores = cur['score'].to_numpy(dtype=np.float32)[:self.top_k]
+            action = np.asarray(action, dtype=np.float32) + self.score_bias * scores
         new_weights = project_to_simplex(action, max_weight=self.max_weight)
 
         rets = cur['fwd_ret_5d'].to_numpy(dtype=np.float32)[:self.top_k]
         rets = np.nan_to_num(rets, nan=0.0)
         portfolio_return = float(np.dot(new_weights, rets))
-        # Baseline: equal-weight over the same top-K — strips out market beta so
-        # reward measures the agent's alpha vs the "no-skill within top-K" prior.
         eq_weights = np.full(self.top_k, 1.0 / self.top_k, dtype=np.float32)
         baseline_return = float(np.dot(eq_weights, rets))
         excess_return = portfolio_return - baseline_return
         trade_amount = float(np.abs(new_weights - self._weights).sum())
-        reward = excess_return - (self.cost_bps / 10_000.0) * trade_amount
+        cost = (self.cost_bps / 10_000.0) * trade_amount
+
+        # Reward shape selector.
+        if self.reward_type == 'excess_return':
+            reward = excess_return - cost
+        elif self.reward_type == 'return_only':
+            reward = portfolio_return - cost
+        elif self.reward_type == 'downside_penalty':
+            downside = max(0.0, -portfolio_return)
+            reward = excess_return - self.downside_lambda * downside - cost
+        elif self.reward_type == 'sharpe':
+            # Rolling Sharpe proxy: mean(excess_return) / std(excess_return) over window
+            self._return_history.append(excess_return)
+            if len(self._return_history) > self.sharpe_window:
+                self._return_history = self._return_history[-self.sharpe_window:]
+            if len(self._return_history) >= 2:
+                arr = np.asarray(self._return_history, dtype=np.float64)
+                std = float(arr.std()) + 1e-6
+                reward = float(arr.mean() / std) - cost
+            else:
+                reward = excess_return - cost
+        elif self.reward_type == 'sharpe_total':
+            # Same as 'sharpe' but on portfolio_return (not excess_return).
+            # Directly mirrors the backtest metric we care about.
+            self._return_history.append(portfolio_return)
+            if len(self._return_history) > self.sharpe_window:
+                self._return_history = self._return_history[-self.sharpe_window:]
+            if len(self._return_history) >= 2:
+                arr = np.asarray(self._return_history, dtype=np.float64)
+                std = float(arr.std()) + 1e-6
+                reward = float(arr.mean() / std) - cost
+            else:
+                reward = portfolio_return - cost
+        else:
+            raise ValueError(f'unknown reward_type: {self.reward_type}')
 
         self._weights = new_weights
         self._last_return = portfolio_return
