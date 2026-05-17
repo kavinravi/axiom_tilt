@@ -5,7 +5,11 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from src.utils.rl_env import build_scoreboard_from_scored_panel, project_to_simplex
+from src.utils.rl_env import (
+    PortfolioEnv,
+    build_scoreboard_from_scored_panel,
+    project_to_simplex,
+)
 
 
 # -------------------------------- project_to_simplex ---------------------------
@@ -55,3 +59,64 @@ def test_build_scoreboard_from_scored_panel_keeps_top_k_per_friday():
     # Top-k should be the highest scores per Friday.
     first_friday = sb[sb['date'] == fridays[0]].sort_values('score', ascending=False)
     assert first_friday['score'].is_monotonic_decreasing
+
+
+# -------------------------------- PortfolioEnv ---------------------------------
+
+
+def _make_synthetic_scoreboard(n_friday: int = 10, top_k: int = 30, seed: int = 0):
+    rng = np.random.RandomState(seed)
+    fridays = pd.to_datetime([f'2002-{1 + (i // 4):02d}-{4 + 7 * (i % 4):02d}'
+                              for i in range(n_friday)])
+    rows = []
+    for d in fridays:
+        for p in range(100, 100 + top_k):
+            rows.append({
+                'permno': p, 'date': d,
+                'score': rng.randn(),
+                'fwd_ret_5d': rng.randn() * 0.02,
+                'macro_vixcls': 20.0, 'macro_dgs10': 4.0, 'macro_t10y2y': 1.0,
+                'payoutratio': rng.rand(), 'ncfdiv': rng.rand(),
+                'bidlo': 50.0 + rng.rand(), 'sgna': rng.rand(), 'retearn': rng.rand(),
+            })
+    return pd.DataFrame(rows)
+
+
+def test_portfolio_env_reset_returns_correct_obs_shape():
+    sb = _make_synthetic_scoreboard(n_friday=10)
+    env = PortfolioEnv(scoreboard=sb, top_k=30, episode_length=3, cost_bps=5.0)
+    obs, info = env.reset(seed=0)
+    # 30 + 30 + 5 * 30 + 3 + 1 = 214
+    assert obs.shape == (214,)
+    assert obs.dtype == np.float32
+    assert not np.isnan(obs).any()
+
+
+def test_portfolio_env_step_returns_valid_tuple():
+    sb = _make_synthetic_scoreboard(n_friday=10)
+    env = PortfolioEnv(scoreboard=sb, top_k=30, episode_length=3, cost_bps=5.0)
+    env.reset(seed=0)
+    action = np.zeros(30, dtype=np.float32)  # equal-weight after softmax
+    obs, reward, terminated, truncated, info = env.step(action)
+    assert obs.shape == (214,)
+    assert isinstance(reward, float)
+    assert isinstance(terminated, bool)
+    assert 'portfolio_return' in info and 'trade_amount' in info
+
+
+def test_portfolio_env_step_terminates_at_episode_length():
+    sb = _make_synthetic_scoreboard(n_friday=10)
+    env = PortfolioEnv(scoreboard=sb, top_k=30, episode_length=2, cost_bps=5.0)
+    env.reset(seed=0)
+    _, _, term1, _, _ = env.step(np.zeros(30, dtype=np.float32))
+    _, _, term2, _, _ = env.step(np.zeros(30, dtype=np.float32))
+    assert not term1
+    assert term2
+
+
+def test_portfolio_env_passes_sb3_check_env():
+    """gymnasium/SB3 compatibility smoke test."""
+    from stable_baselines3.common.env_checker import check_env
+    sb = _make_synthetic_scoreboard(n_friday=10)
+    env = PortfolioEnv(scoreboard=sb, top_k=30, episode_length=3, cost_bps=5.0)
+    check_env(env, warn=True)  # raises on incompatibility
