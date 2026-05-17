@@ -29,6 +29,7 @@ data/processed/sharadar_sf1.parquet
 data/processed/sharadar_tickers.parquet
 data/processed/finbert_doc_embed/
 data/processed/finbert_stockday_embed/
+data/processed/training_panel/
 data/archive/
 
 *.log
