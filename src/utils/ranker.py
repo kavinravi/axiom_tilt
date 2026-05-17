@@ -14,10 +14,16 @@ import pandas as pd
 from lightgbm import LGBMRanker
 from sklearn.decomposition import PCA
 
+from src.utils.io import repo_root
+
 
 def load_walk_pca(walk_id: int, artifacts_root: Path | None = None) -> tuple[PCA, int]:
-    """Load fitted PCA from notebook 04's per-walk artifact."""
-    root = Path(artifacts_root) if artifacts_root is not None else Path('artifacts')
+    """Load fitted PCA from notebook 04's per-walk artifact.
+
+    Defaults to `<repo_root>/artifacts` so the call works from any CWD
+    (notebooks/, tests/, etc).
+    """
+    root = Path(artifacts_root) if artifacts_root is not None else repo_root() / 'artifacts'
     path = root / 'pca-text' / f'walk-{walk_id:03d}' / 'pca.joblib'
     pca: PCA = joblib.load(path)
     return pca, int(pca.n_components_)
