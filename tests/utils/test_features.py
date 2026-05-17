@@ -6,6 +6,7 @@ import pandas as pd
 import pytest
 
 from src.utils.features import (
+    compute_days_since_filing,
     compute_forward_returns,
     compute_text_novelty,
     pivot_macro_wide,
@@ -103,3 +104,51 @@ def test_compute_text_novelty_does_not_cross_permnos():
     out = compute_text_novelty(embed, lookback_days=7)
     # Neither row has a t-7 same-permno predecessor → both NaN
     assert out['text_novelty'].isna().all()
+
+
+# -------------------------------- compute_days_since_filing --------------------
+
+
+def test_compute_days_since_filing_simple_case():
+    filings = pd.DataFrame({
+        'cik': ['0000000101', '0000000101'],
+        'filing_date': pd.to_datetime(['2020-01-01', '2020-02-01']),
+        'form_type': ['10-K', '10-Q'],
+    })
+    panel = pd.DataFrame({
+        'permno': [101, 101, 101],
+        'cik': ['0000000101'] * 3,
+        'date': pd.to_datetime(['2020-01-05', '2020-02-05', '2020-03-10']),
+    })
+    out = compute_days_since_filing(filings, panel)
+    assert out['days_since_filing'].tolist() == [4, 4, 38]
+
+
+def test_compute_days_since_filing_returns_nan_before_first_filing():
+    filings = pd.DataFrame({
+        'cik': ['0000000101'],
+        'filing_date': pd.to_datetime(['2020-06-01']),
+        'form_type': ['10-K'],
+    })
+    panel = pd.DataFrame({
+        'permno': [101],
+        'cik': ['0000000101'],
+        'date': pd.to_datetime(['2020-01-15']),  # before any filing
+    })
+    out = compute_days_since_filing(filings, panel)
+    assert pd.isna(out['days_since_filing'].iloc[0])
+
+
+def test_compute_days_since_filing_excludes_non_kqa_forms():
+    filings = pd.DataFrame({
+        'cik': ['0000000101', '0000000101'],
+        'filing_date': pd.to_datetime(['2020-01-01', '2020-02-01']),
+        'form_type': ['DEF 14A', '10-K'],  # 14A excluded; 10-K counted
+    })
+    panel = pd.DataFrame({
+        'permno': [101],
+        'cik': ['0000000101'],
+        'date': pd.to_datetime(['2020-02-10']),
+    })
+    out = compute_days_since_filing(filings, panel)
+    assert out['days_since_filing'].iloc[0] == 9  # from 2020-02-01, not 2020-01-01

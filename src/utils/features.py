@@ -90,3 +90,35 @@ def compute_text_novelty(
         novelty.append(float(1.0 - np.dot(a, b) / denom))
     out['text_novelty'] = np.asarray(novelty, dtype=np.float32)
     return out[[permno_col, date_col, 'text_novelty']]
+
+
+FORM_TYPES_KQA = ('10-K', '10-Q', '8-K')
+
+
+def compute_days_since_filing(
+    filings: pd.DataFrame,
+    panel: pd.DataFrame,
+    form_types: tuple[str, ...] = FORM_TYPES_KQA,
+) -> pd.DataFrame:
+    """For each (permno, date), days since the most recent filing (10-K/Q/8-K).
+
+    `filings` columns: cik, filing_date, form_type.
+    `panel` columns: permno, cik, date.
+    Returns the panel with `days_since_filing` (int or NaN if no prior filing).
+    Uses `merge_asof` (left, by cik, on filing_date) for vectorized lookup.
+    """
+    f = filings[filings['form_type'].isin(form_types)][['cik', 'filing_date']].copy()
+    f = f.sort_values(['cik', 'filing_date'])
+    p = panel.sort_values(['cik', 'date']).copy()
+    merged = pd.merge_asof(
+        p,
+        f.rename(columns={'filing_date': 'last_filing_date'}),
+        left_on='date',
+        right_on='last_filing_date',
+        by='cik',
+        direction='backward',
+    )
+    delta = (merged['date'] - merged['last_filing_date']).dt.days
+    out = panel[['permno', 'date']].copy()
+    out['days_since_filing'] = delta.values
+    return out
