@@ -106,9 +106,15 @@ def assemble_walk_features(
     return X, y, groups, meta
 
 
+# LightGBM's default label_gain has 31 entries (labels 0..30). We use 32 buckets
+# in the notebook, so we need a 32-entry gain vector. Keep the same 2^i - 1 shape.
+_LABEL_GAIN_64 = [float(2 ** i - 1) for i in range(64)]
+
+
 DEFAULT_RANKER_PARAMS: dict[str, Any] = {
     'objective': 'lambdarank',
     'metric': 'ndcg',
+    'label_gain': _LABEL_GAIN_64,
     'num_leaves': 63,
     'learning_rate': 0.05,
     'n_estimators': 500,
