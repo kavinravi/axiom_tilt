@@ -11,11 +11,28 @@ from src.utils.ranker import (
     assemble_walk_features,
     build_ranker,
     compute_excess_return_buckets,
+    drop_zero_info_columns,
     evaluate_ranker,
     friday_only,
     load_walk_pca,
     project_text_to_pca,
 )
+
+
+def test_drop_zero_info_columns_removes_all_nan_and_constant_cols():
+    X_train = pd.DataFrame({
+        'good': [1.0, 2.0, 3.0],
+        'all_nan': [np.nan, np.nan, np.nan],
+        'constant': [5.0, 5.0, 5.0],
+    })
+    X_val = pd.DataFrame({
+        'good': [4.0, 5.0],
+        'all_nan': [1.0, 2.0],   # populated in val but train decides
+        'constant': [5.0, 6.0],
+    })
+    X_train_out, X_val_out = drop_zero_info_columns(X_train, X_val)
+    assert list(X_train_out.columns) == ['good']
+    assert list(X_val_out.columns) == ['good']
 
 
 # -------------------------------- load_walk_pca --------------------------------

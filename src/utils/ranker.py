@@ -123,6 +123,19 @@ DEFAULT_RANKER_PARAMS: dict[str, Any] = {
 }
 
 
+def drop_zero_info_columns(X_train: pd.DataFrame, *also: pd.DataFrame) -> tuple[pd.DataFrame, ...]:
+    """Drop columns where TRAIN is entirely NaN or zero-variance.
+
+    Returns the input frames with the same set of columns removed from all,
+    based on X_train's structure (held constant across train/val/test).
+    """
+    all_nan = X_train.columns[X_train.isna().all()].tolist()
+    zero_var = [c for c in X_train.columns
+                if c not in all_nan and X_train[c].nunique(dropna=True) <= 1]
+    drop = all_nan + zero_var
+    return tuple(df.drop(columns=drop) for df in (X_train, *also))
+
+
 def build_ranker(params: dict | None = None) -> LGBMRanker:
     """`LGBMRanker` factory with lambdarank defaults; `params` overrides."""
     merged = {**DEFAULT_RANKER_PARAMS, **(params or {})}
