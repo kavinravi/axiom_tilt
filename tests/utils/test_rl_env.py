@@ -114,6 +114,19 @@ def test_portfolio_env_step_terminates_at_episode_length():
     assert term2
 
 
+def test_portfolio_env_reward_is_excess_over_equal_weight():
+    """Equal-weight action should give ~0 excess return (minus tiny rebalance cost)."""
+    sb = _make_synthetic_scoreboard(n_friday=5)
+    env = PortfolioEnv(scoreboard=sb, top_k=30, episode_length=3, cost_bps=0.0)
+    env.reset(seed=0)
+    eq_action = np.zeros(30, dtype=np.float32)  # softmax -> equal weights
+    obs, reward, _, _, info = env.step(eq_action)
+    # With cost=0 and equal-weight action, portfolio_return == baseline_return
+    # so excess == 0 and reward == 0.
+    assert abs(reward) < 1e-6
+    assert abs(info['excess_return']) < 1e-6
+
+
 def test_portfolio_env_passes_sb3_check_env():
     """gymnasium/SB3 compatibility smoke test."""
     from stable_baselines3.common.env_checker import check_env

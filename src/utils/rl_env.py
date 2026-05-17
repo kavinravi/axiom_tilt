@@ -136,8 +136,13 @@ class PortfolioEnv(gym.Env):
         rets = cur['fwd_ret_5d'].to_numpy(dtype=np.float32)[:self.top_k]
         rets = np.nan_to_num(rets, nan=0.0)
         portfolio_return = float(np.dot(new_weights, rets))
+        # Baseline: equal-weight over the same top-K — strips out market beta so
+        # reward measures the agent's alpha vs the "no-skill within top-K" prior.
+        eq_weights = np.full(self.top_k, 1.0 / self.top_k, dtype=np.float32)
+        baseline_return = float(np.dot(eq_weights, rets))
+        excess_return = portfolio_return - baseline_return
         trade_amount = float(np.abs(new_weights - self._weights).sum())
-        reward = portfolio_return - (self.cost_bps / 10_000.0) * trade_amount
+        reward = excess_return - (self.cost_bps / 10_000.0) * trade_amount
 
         self._weights = new_weights
         self._last_return = portfolio_return
@@ -145,7 +150,10 @@ class PortfolioEnv(gym.Env):
         self._steps += 1
         terminated = self._steps >= self.episode_length or self._idx >= len(self._dates)
         return (self._build_obs(), float(reward), bool(terminated), False,
-                {'portfolio_return': portfolio_return, 'trade_amount': trade_amount})
+                {'portfolio_return': portfolio_return,
+                 'baseline_return': baseline_return,
+                 'excess_return': excess_return,
+                 'trade_amount': trade_amount})
 
     def _build_obs(self) -> np.ndarray:
         # If we've stepped past the last date, obs is from previous date's snapshot
