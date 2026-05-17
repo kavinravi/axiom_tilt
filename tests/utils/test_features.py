@@ -7,6 +7,7 @@ import pytest
 
 from src.utils.features import (
     compute_days_since_filing,
+    compute_doc_count_window,
     compute_forward_returns,
     compute_text_novelty,
     pivot_macro_wide,
@@ -152,3 +153,52 @@ def test_compute_days_since_filing_excludes_non_kqa_forms():
     })
     out = compute_days_since_filing(filings, panel)
     assert out['days_since_filing'].iloc[0] == 9  # from 2020-02-01, not 2020-01-01
+
+
+# -------------------------------- compute_doc_count_window ---------------------
+
+
+def test_compute_doc_count_window_counts_filings_in_window():
+    filings = pd.DataFrame({
+        'cik': ['0000000101'] * 4,
+        'filing_date': pd.to_datetime(['2020-06-01', '2020-06-03', '2020-06-05', '2020-06-15']),
+        'form_type': ['8-K', '8-K', '10-Q', '8-K'],
+    })
+    panel = pd.DataFrame({
+        'permno': [101],
+        'cik': ['0000000101'],
+        'date': pd.to_datetime(['2020-06-07']),  # window = [2020-05-31, 2020-06-07]
+    })
+    out = compute_doc_count_window(filings, panel, window_days=7)
+    # 3 filings in [2020-05-31, 2020-06-07]: 06-01, 06-03, 06-05
+    assert out['doc_count_7d'].iloc[0] == 3
+
+
+def test_compute_doc_count_window_returns_zero_when_no_filings():
+    filings = pd.DataFrame({
+        'cik': ['0000000101'],
+        'filing_date': pd.to_datetime(['2019-01-01']),
+        'form_type': ['10-K'],
+    })
+    panel = pd.DataFrame({
+        'permno': [101],
+        'cik': ['0000000101'],
+        'date': pd.to_datetime(['2020-06-07']),
+    })
+    out = compute_doc_count_window(filings, panel, window_days=7)
+    assert out['doc_count_7d'].iloc[0] == 0
+
+
+def test_compute_doc_count_window_does_not_count_other_permnos():
+    filings = pd.DataFrame({
+        'cik': ['0000000999'],  # different cik
+        'filing_date': pd.to_datetime(['2020-06-03']),
+        'form_type': ['8-K'],
+    })
+    panel = pd.DataFrame({
+        'permno': [101],
+        'cik': ['0000000101'],
+        'date': pd.to_datetime(['2020-06-07']),
+    })
+    out = compute_doc_count_window(filings, panel, window_days=7)
+    assert out['doc_count_7d'].iloc[0] == 0

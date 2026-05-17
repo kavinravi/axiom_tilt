@@ -122,3 +122,29 @@ def compute_days_since_filing(
     out = panel[['permno', 'date']].copy()
     out['days_since_filing'] = delta.values
     return out
+
+
+def compute_doc_count_window(
+    filings: pd.DataFrame,
+    panel: pd.DataFrame,
+    window_days: int = 7,
+) -> pd.DataFrame:
+    """For each (permno, date), count filings on that cik in `[date − window_days, date]`.
+
+    All form types counted (not restricted to K/Q/8K). Returns the panel with
+    `doc_count_{window_days}d` column (int32).
+    """
+    col = f'doc_count_{window_days}d'
+    f = filings[['cik', 'filing_date']].sort_values(['cik', 'filing_date']).copy()
+    p = panel[['permno', 'cik', 'date']].copy()
+    p['_left'] = p['date'] - pd.Timedelta(days=window_days)
+    merged = p.merge(f, on='cik', how='left')
+    in_window = (merged['filing_date'] >= merged['_left']) & (merged['filing_date'] <= merged['date'])
+    merged['_count'] = in_window.astype('int32')
+    counts = (
+        merged.groupby(['permno', 'date'], as_index=False)['_count'].sum()
+        .rename(columns={'_count': col})
+    )
+    out = panel[['permno', 'date']].merge(counts, on=['permno', 'date'], how='left')
+    out[col] = out[col].fillna(0).astype('int32')
+    return out
