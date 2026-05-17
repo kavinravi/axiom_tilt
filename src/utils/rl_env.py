@@ -42,3 +42,27 @@ def project_to_simplex(action: np.ndarray, max_weight: float = 0.10) -> np.ndarr
 
     # Final renorm to cancel float drift.
     return (w / w.sum()).astype(np.float32)
+
+
+TOP_FEATURES = ['payoutratio', 'ncfdiv', 'bidlo', 'sgna', 'retearn']
+MACRO_COLS = ['macro_vixcls', 'macro_dgs10', 'macro_t10y2y']
+
+
+def build_scoreboard_from_scored_panel(
+    panel_df: pd.DataFrame,
+    top_k: int = 30,
+    date_col: str = 'date',
+    score_col: str = 'score',
+    target_col: str = 'fwd_ret_5d',
+) -> pd.DataFrame:
+    """Given a Friday-only panel with a pre-computed `score` column, keep
+    top-K by score per date. Returns columns:
+    [permno, date, score, fwd_ret_5d, *MACRO_COLS, *TOP_FEATURES].
+    """
+    keep = ['permno', date_col, score_col, target_col, *MACRO_COLS, *TOP_FEATURES]
+    df = panel_df[keep].copy()
+    df = (df.sort_values([date_col, score_col], ascending=[True, False])
+            .groupby(date_col, sort=False, group_keys=False)
+            .head(top_k)
+            .reset_index(drop=True))
+    return df
