@@ -7,7 +7,12 @@ import pandas as pd
 import pytest
 from sklearn.decomposition import PCA
 
-from src.utils.ranker import load_walk_pca, project_text_to_pca
+from src.utils.ranker import (
+    compute_excess_return_buckets,
+    friday_only,
+    load_walk_pca,
+    project_text_to_pca,
+)
 
 
 # -------------------------------- load_walk_pca --------------------------------
@@ -39,3 +44,45 @@ def test_project_text_to_pca_returns_correct_shape_and_columns():
     assert list(out.columns) == ['permno', 'date', 'pca_0', 'pca_1', 'pca_2']
     assert len(out) == 3
     assert out['pca_0'].dtype == np.float32
+
+
+# -------------------------------- friday_only ----------------------------------
+
+
+def test_friday_only_keeps_only_weekday_4():
+    df = pd.DataFrame({
+        # Wed, Thu, Fri, Mon, Fri
+        'date': pd.to_datetime(['2020-01-01', '2020-01-02', '2020-01-03',
+                                '2020-01-06', '2020-01-10']),
+        'x': [1, 2, 3, 4, 5],
+    })
+    out = friday_only(df)
+    assert out['date'].dt.dayofweek.unique().tolist() == [4]
+    assert len(out) == 2
+    assert out['x'].tolist() == [3, 5]
+
+
+# -------------------------------- compute_excess_return_buckets ----------------
+
+
+def test_compute_excess_return_buckets_higher_excess_higher_bucket():
+    df = pd.DataFrame({
+        'permno': [101, 102, 103, 104, 105, 106],
+        'date': pd.to_datetime(['2020-01-03'] * 3 + ['2020-01-10'] * 3),
+        'fwd_ret_5d': [0.01, 0.02, 0.03, -0.01, 0.00, 0.01],
+    })
+    out = compute_excess_return_buckets(df, n_buckets=3)
+    # Within each date, larger excess return gets a higher bucket.
+    assert out.iloc[0] < out.iloc[2]
+    assert out.iloc[3] < out.iloc[5]
+    assert out.dropna().astype(int).between(0, 2).all()
+
+
+def test_compute_excess_return_buckets_drops_nan_rows():
+    df = pd.DataFrame({
+        'permno': [101, 102],
+        'date': pd.to_datetime(['2020-01-03', '2020-01-03']),
+        'fwd_ret_5d': [0.01, np.nan],
+    })
+    out = compute_excess_return_buckets(df, n_buckets=2)
+    assert pd.isna(out.iloc[1])

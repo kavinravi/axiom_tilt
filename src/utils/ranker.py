@@ -33,3 +33,26 @@ def project_text_to_pca(
     pca_df = pd.DataFrame(Z, columns=cols)
     keys = embed[['permno', 'date']].reset_index(drop=True)
     return pd.concat([keys, pca_df], axis=1)
+
+
+def friday_only(df: pd.DataFrame, date_col: str = 'date') -> pd.DataFrame:
+    """Keep only Friday rows (weekday == 4) — the rebalance cadence."""
+    return df[df[date_col].dt.dayofweek == 4].copy()
+
+
+def compute_excess_return_buckets(
+    df: pd.DataFrame,
+    ret_col: str = 'fwd_ret_5d',
+    date_col: str = 'date',
+    n_buckets: int = 32,
+) -> pd.Series:
+    """Cross-sectional excess return → percentile rank → integer bucket.
+
+    Returns Int64 series aligned to df.index; NaN where `ret_col` is NaN.
+    """
+    grp = df.groupby(date_col)[ret_col]
+    excess = df[ret_col] - grp.transform('mean')
+    pct = excess.groupby(df[date_col]).rank(pct=True, method='average')
+    bucket = np.floor(pct * n_buckets).clip(upper=n_buckets - 1)
+    bucket = bucket.where(pct.notna())
+    return bucket.astype('Int64')
