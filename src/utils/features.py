@@ -56,3 +56,37 @@ def compute_forward_returns(
         )
         out[f'fwd_ret_{h}d'] = np.expm1(rolling_sum.groupby(out[permno_col]).shift(-h))
     return out.reset_index(drop=True)
+
+
+def compute_text_novelty(
+    embed: pd.DataFrame,
+    lookback_days: int = 7,
+    permno_col: str = 'permno',
+    date_col: str = 'date',
+    vec_col: str = 'vec',
+) -> pd.DataFrame:
+    """Compute `text_novelty` = 1 − cosine_similarity(e_{i,t}, e_{i, t−lookback}).
+
+    `lookback_days` is calendar days. For each (permno, date), looks up the
+    same permno's vector at exactly `date − lookback_days` (calendar). If no
+    such row exists, writes NaN. Embedding panel is assumed forward-filled to
+    daily (notebook 03 output) so the lookup hits in steady state.
+    """
+    out = embed[[permno_col, date_col, vec_col]].copy()
+    lookup = out.set_index([permno_col, date_col])[vec_col].to_dict()
+    novelty = []
+    for permno, date, vec in zip(out[permno_col], out[date_col], out[vec_col]):
+        prior_date = date - pd.Timedelta(days=lookback_days)
+        prior_vec = lookup.get((permno, prior_date))
+        if prior_vec is None:
+            novelty.append(np.nan)
+            continue
+        a = np.asarray(vec, dtype=np.float32)
+        b = np.asarray(prior_vec, dtype=np.float32)
+        denom = np.linalg.norm(a) * np.linalg.norm(b)
+        if denom == 0.0:
+            novelty.append(np.nan)
+            continue
+        novelty.append(float(1.0 - np.dot(a, b) / denom))
+    out['text_novelty'] = np.asarray(novelty, dtype=np.float32)
+    return out[[permno_col, date_col, 'text_novelty']]

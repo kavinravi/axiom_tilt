@@ -5,7 +5,11 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from src.utils.features import compute_forward_returns, pivot_macro_wide
+from src.utils.features import (
+    compute_forward_returns,
+    compute_text_novelty,
+    pivot_macro_wide,
+)
 
 
 def test_pivot_macro_wide_creates_one_column_per_series():
@@ -62,3 +66,40 @@ def test_compute_forward_returns_does_not_cross_permnos():
     # 101's last row's fwd_ret_1d should NOT pull from 202
     assert pd.isna(out.loc[out['permno'] == 101, 'fwd_ret_1d'].iloc[-1])
     assert pd.isna(out.loc[out['permno'] == 202, 'fwd_ret_1d'].iloc[-1])
+
+
+# -------------------------------- compute_text_novelty -------------------------
+
+
+def test_compute_text_novelty_identical_vectors_is_zero():
+    embed = pd.DataFrame({
+        'permno': [101, 101],
+        'date': pd.to_datetime(['2020-01-08', '2020-01-15']),  # 7 days apart
+        'vec': [[1.0, 0.0, 0.0], [1.0, 0.0, 0.0]],
+    })
+    out = compute_text_novelty(embed, lookback_days=7)
+    # First row has no t-7 → NaN. Second row's vec == prior vec → novelty = 0.
+    assert pd.isna(out['text_novelty'].iloc[0])
+    assert out['text_novelty'].iloc[1] == pytest.approx(0.0, abs=1e-6)
+
+
+def test_compute_text_novelty_orthogonal_vectors_is_one():
+    embed = pd.DataFrame({
+        'permno': [101, 101],
+        'date': pd.to_datetime(['2020-01-08', '2020-01-15']),
+        'vec': [[1.0, 0.0], [0.0, 1.0]],
+    })
+    out = compute_text_novelty(embed, lookback_days=7)
+    # cosine_sim = 0 → novelty = 1 - 0 = 1
+    assert out['text_novelty'].iloc[1] == pytest.approx(1.0, abs=1e-6)
+
+
+def test_compute_text_novelty_does_not_cross_permnos():
+    embed = pd.DataFrame({
+        'permno': [101, 202],
+        'date': pd.to_datetime(['2020-01-08', '2020-01-15']),  # different permnos
+        'vec': [[1.0, 0.0], [0.0, 1.0]],
+    })
+    out = compute_text_novelty(embed, lookback_days=7)
+    # Neither row has a t-7 same-permno predecessor → both NaN
+    assert out['text_novelty'].isna().all()
