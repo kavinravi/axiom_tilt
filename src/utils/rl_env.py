@@ -97,6 +97,7 @@ class PortfolioEnv(gym.Env):
         downside_lambda: float = 5.0,
         action_high: float = 5.0,
         score_bias: float = 0.0,
+        turnover_lambda: float = 0.0,
     ):
         super().__init__()
         self.scoreboard = scoreboard.sort_values('date').reset_index(drop=True)
@@ -110,6 +111,7 @@ class PortfolioEnv(gym.Env):
         #   'sharpe_total'     : rolling Sharpe proxy of portfolio_return (not excess) — aligns w/ backtest metric
         #   'return_only'      : raw portfolio return (no alpha subtraction)
         #   'downside_penalty' : excess_return - downside_lambda * max(0, -portfolio_return)
+        #   'sharpe_turnover'  : sharpe (as above) - turnover_lambda * trade_amount - cost
         self.reward_type = str(reward_type)
         self.sharpe_window = int(sharpe_window)
         self.downside_lambda = float(downside_lambda)
@@ -118,6 +120,12 @@ class PortfolioEnv(gym.Env):
         # action before projection. score_bias=1 + zero action ≈ Score-Prop.
         # Implicit behavior-cloning warm-start — PPO starts at Score-Prop and learns deviations.
         self.score_bias = float(score_bias)
+        # turnover_lambda: explicit per-step penalty on |w_t - w_{t-1}| applied
+        # IN ADDITION to the per-step cost term. The cost term (cost_bps*turnover)
+        # is in basis points (e.g. 0.0005 at 5bps with 0.4 turnover ≈ 2e-4); the
+        # sharpe reward is order O(1), so the cost term is essentially invisible
+        # to PPO. turnover_lambda is in raw turnover units (typical 0.1-2.0).
+        self.turnover_lambda = float(turnover_lambda)
 
         self._dates = np.array(sorted(self.scoreboard['date'].unique()))
         self._by_date: dict = {d: g.reset_index(drop=True)
@@ -200,6 +208,21 @@ class PortfolioEnv(gym.Env):
                 reward = float(arr.mean() / std) - cost
             else:
                 reward = portfolio_return - cost
+        elif self.reward_type == 'sharpe_turnover':
+            # Sharpe of excess_return (same as 'sharpe') with an explicit
+            # turnover_lambda * trade_amount penalty on top of the cost term.
+            # cost_bps penalty is too weak (basis points) vs the O(1) Sharpe
+            # signal; turnover_lambda is in raw units so 1.0 means each unit
+            # of turnover subtracts 1.0 of reward — comparable to typical sharpe.
+            self._return_history.append(excess_return)
+            if len(self._return_history) > self.sharpe_window:
+                self._return_history = self._return_history[-self.sharpe_window:]
+            if len(self._return_history) >= 2:
+                arr = np.asarray(self._return_history, dtype=np.float64)
+                std = float(arr.std()) + 1e-6
+                reward = float(arr.mean() / std) - cost - self.turnover_lambda * trade_amount
+            else:
+                reward = excess_return - cost - self.turnover_lambda * trade_amount
         else:
             raise ValueError(f'unknown reward_type: {self.reward_type}')
 
