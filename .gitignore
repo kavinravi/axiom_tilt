@@ -34,3 +34,6 @@ data/archive/
 
 *.log
 logs/*.csv
+# experiments/: keep configs + STATE.md + results.tsv as a research log,
+# but exclude per-run training artifacts (model.zip, TB events, etc.)
+experiments/runs/

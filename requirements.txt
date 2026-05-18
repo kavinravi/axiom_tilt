@@ -25,7 +25,7 @@ d3rlpy>=2.6
 gymnasium>=1.0
 stable-baselines3>=2.4
 
-# Optimization / portfolio
+# Optimization / portfolio (cvxpy for MinVar QP in notebook 08 backtest)
 cvxpy>=1.5
 scipy>=1.13
 
