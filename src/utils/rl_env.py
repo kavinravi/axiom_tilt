@@ -71,8 +71,12 @@ def build_scoreboard_from_scored_panel(
 
 
 # Observation dim: K weights + K scores + 5 features * K stocks + 3 macro + 1 recent return.
-def _obs_dim(top_k: int) -> int:
-    return top_k + top_k + len(TOP_FEATURES) * top_k + len(MACRO_COLS) + 1
+# If include_portfolio_state, add `history_len` past portfolio returns.
+def _obs_dim(top_k: int, include_portfolio_state: bool = False, history_len: int = 4) -> int:
+    base = top_k + top_k + len(TOP_FEATURES) * top_k + len(MACRO_COLS) + 1
+    if include_portfolio_state:
+        base += history_len
+    return base
 
 
 class PortfolioEnv(gym.Env):
@@ -97,6 +101,11 @@ class PortfolioEnv(gym.Env):
         downside_lambda: float = 5.0,
         action_high: float = 5.0,
         score_bias: float = 0.0,
+        baseline_anchor: bool = False,
+        tilt_scale: float = 1.0,
+        include_portfolio_state: bool = False,
+        history_len: int = 4,
+        cost_anneal_episodes: int = 0,
     ):
         super().__init__()
         self.scoreboard = scoreboard.sort_values('date').reset_index(drop=True)
@@ -107,17 +116,26 @@ class PortfolioEnv(gym.Env):
         # Reward variants:
         #   'excess_return'    : alpha vs equal-weight top-K (default)
         #   'sharpe'           : rolling Sharpe proxy of excess_return over `sharpe_window`
-        #   'sharpe_total'     : rolling Sharpe proxy of portfolio_return (not excess) — aligns w/ backtest metric
+        #   'sharpe_total'     : rolling Sharpe proxy of portfolio_return (not excess)
         #   'return_only'      : raw portfolio return (no alpha subtraction)
         #   'downside_penalty' : excess_return - downside_lambda * max(0, -portfolio_return)
+        #   'ir_vs_baseline'   : rolling Sharpe of (port_ret - score_prop_ret); active-return signal
         self.reward_type = str(reward_type)
         self.sharpe_window = int(sharpe_window)
         self.downside_lambda = float(downside_lambda)
         self.action_high = float(action_high)
-        # score_bias: if > 0, env adds `score_bias * z_scores` to the policy's
-        # action before projection. score_bias=1 + zero action ≈ Score-Prop.
-        # Implicit behavior-cloning warm-start — PPO starts at Score-Prop and learns deviations.
+        # score_bias: legacy additive-bias-on-action (autoresearch round 1, dead end with sharpe reward).
         self.score_bias = float(score_bias)
+        # baseline_anchor: when True, treat action as a log-tilt added to log(score_prop_weights).
+        # action=0 → exactly Score-Prop weights. PPO learns deviations from baseline, not absolute weights.
+        self.baseline_anchor = bool(baseline_anchor)
+        self.tilt_scale = float(tilt_scale)
+        # include_portfolio_state: extend obs with last `history_len` portfolio returns (proprioception).
+        self.include_portfolio_state = bool(include_portfolio_state)
+        self.history_len = int(history_len)
+        # cost_anneal_episodes: ramp effective cost from 0 → cost_bps linearly over N episodes
+        # (counted across resets). 0 disables annealing.
+        self.cost_anneal_episodes = int(cost_anneal_episodes)
 
         self._dates = np.array(sorted(self.scoreboard['date'].unique()))
         self._by_date: dict = {d: g.reset_index(drop=True)
@@ -131,43 +149,69 @@ class PortfolioEnv(gym.Env):
         )
         # Wide finite bounds for observation; post-VecNormalize values stay within ~10.
         self.observation_space = spaces.Box(
-            low=-100.0, high=100.0, shape=(_obs_dim(self.top_k),), dtype=np.float32,
+            low=-100.0, high=100.0,
+            shape=(_obs_dim(self.top_k, self.include_portfolio_state, self.history_len),),
+            dtype=np.float32,
         )
 
         # Initialize state attrs so reset() can be called even before _build_obs.
         self._idx = 0
         self._steps = 0
+        self._episode_count = 0
         self._weights = np.full(self.top_k, 1.0 / self.top_k, dtype=np.float32)
         self._last_return = 0.0
         self._return_history: list = []  # for sharpe-style reward
+        self._port_return_history: list = []  # for include_portfolio_state obs
 
     def reset(self, seed=None, options=None):
         super().reset(seed=seed)
         max_start = max(0, len(self._dates) - self.episode_length - 1)
         self._idx = int(self.np_random.integers(0, max_start + 1)) if max_start > 0 else 0
         self._steps = 0
+        self._episode_count += 1
         self._weights = np.full(self.top_k, 1.0 / self.top_k, dtype=np.float32)
         self._last_return = 0.0
         self._return_history = []
+        self._port_return_history = []
         return self._build_obs(), {}
 
     def step(self, action: np.ndarray):
         cur = self._by_date[self._dates[self._idx]]
+        raw_scores = cur['score'].to_numpy(dtype=np.float32)[:self.top_k]
+
+        # Compute Score-Prop baseline weights (used for tilt-anchor and ir_vs_baseline reward).
+        # Only call if needed — cheap but adds a softmax + water-fill per step.
+        need_baseline = self.baseline_anchor or self.reward_type == 'ir_vs_baseline'
+        baseline_weights = (project_to_simplex(raw_scores, max_weight=self.max_weight)
+                            if need_baseline else None)
+
         if self.score_bias > 0:
-            # RAW scores (matches Score-Prop baseline = softmax(raw_scores)).
-            # With score_bias=1 and action=0, action_biased = scores → softmax = Score-Prop.
-            scores = cur['score'].to_numpy(dtype=np.float32)[:self.top_k]
-            action = np.asarray(action, dtype=np.float32) + self.score_bias * scores
-        new_weights = project_to_simplex(action, max_weight=self.max_weight)
+            action = np.asarray(action, dtype=np.float32) + self.score_bias * raw_scores
+
+        if self.baseline_anchor:
+            # action = 0 → softmax(log baseline) = baseline (water-fill no-op since baseline
+            # already satisfies cap). PPO learns deviations from Score-Prop.
+            log_baseline = np.log(baseline_weights + 1e-8)
+            tilted = log_baseline + self.tilt_scale * np.asarray(action, dtype=np.float32)
+            new_weights = project_to_simplex(tilted, max_weight=self.max_weight)
+        else:
+            new_weights = project_to_simplex(action, max_weight=self.max_weight)
 
         rets = cur['fwd_ret_5d'].to_numpy(dtype=np.float32)[:self.top_k]
         rets = np.nan_to_num(rets, nan=0.0)
         portfolio_return = float(np.dot(new_weights, rets))
         eq_weights = np.full(self.top_k, 1.0 / self.top_k, dtype=np.float32)
-        baseline_return = float(np.dot(eq_weights, rets))
+        baseline_return = float(np.dot(eq_weights, rets))  # equal-weight (legacy)
         excess_return = portfolio_return - baseline_return
         trade_amount = float(np.abs(new_weights - self._weights).sum())
-        cost = (self.cost_bps / 10_000.0) * trade_amount
+
+        # Cost annealing: ramp 0 → cost_bps over the first `cost_anneal_episodes` resets.
+        if self.cost_anneal_episodes > 0:
+            progress = min(1.0, self._episode_count / float(self.cost_anneal_episodes))
+            effective_cost_bps = self.cost_bps * progress
+        else:
+            effective_cost_bps = self.cost_bps
+        cost = (effective_cost_bps / 10_000.0) * trade_amount
 
         # Reward shape selector.
         if self.reward_type == 'excess_return':
@@ -178,7 +222,6 @@ class PortfolioEnv(gym.Env):
             downside = max(0.0, -portfolio_return)
             reward = excess_return - self.downside_lambda * downside - cost
         elif self.reward_type == 'sharpe':
-            # Rolling Sharpe proxy: mean(excess_return) / std(excess_return) over window
             self._return_history.append(excess_return)
             if len(self._return_history) > self.sharpe_window:
                 self._return_history = self._return_history[-self.sharpe_window:]
@@ -189,8 +232,6 @@ class PortfolioEnv(gym.Env):
             else:
                 reward = excess_return - cost
         elif self.reward_type == 'sharpe_total':
-            # Same as 'sharpe' but on portfolio_return (not excess_return).
-            # Directly mirrors the backtest metric we care about.
             self._return_history.append(portfolio_return)
             if len(self._return_history) > self.sharpe_window:
                 self._return_history = self._return_history[-self.sharpe_window:]
@@ -200,8 +241,25 @@ class PortfolioEnv(gym.Env):
                 reward = float(arr.mean() / std) - cost
             else:
                 reward = portfolio_return - cost
+        elif self.reward_type == 'ir_vs_baseline':
+            # Rolling info ratio vs Score-Prop: mean(active) / std(active) over window.
+            sp_return = float(np.dot(baseline_weights, rets))
+            active_return = portfolio_return - sp_return
+            self._return_history.append(active_return)
+            if len(self._return_history) > self.sharpe_window:
+                self._return_history = self._return_history[-self.sharpe_window:]
+            if len(self._return_history) >= 2:
+                arr = np.asarray(self._return_history, dtype=np.float64)
+                std = float(arr.std()) + 1e-6
+                reward = float(arr.mean() / std) - cost
+            else:
+                reward = active_return - cost
         else:
             raise ValueError(f'unknown reward_type: {self.reward_type}')
+
+        self._port_return_history.append(portfolio_return)
+        if len(self._port_return_history) > self.history_len:
+            self._port_return_history = self._port_return_history[-self.history_len:]
 
         self._weights = new_weights
         self._last_return = portfolio_return
@@ -212,7 +270,8 @@ class PortfolioEnv(gym.Env):
                 {'portfolio_return': portfolio_return,
                  'baseline_return': baseline_return,
                  'excess_return': excess_return,
-                 'trade_amount': trade_amount})
+                 'trade_amount': trade_amount,
+                 'effective_cost_bps': effective_cost_bps})
 
     def _build_obs(self) -> np.ndarray:
         # If we've stepped past the last date, obs is from previous date's snapshot
@@ -237,5 +296,15 @@ class PortfolioEnv(gym.Env):
         # 5. recent portfolio return (1)
         recent = np.array([self._last_return], dtype=np.float32)
 
-        obs = np.concatenate([w, scores, feats, macro, recent]).astype(np.float32)
+        parts = [w, scores, feats, macro, recent]
+
+        # 6. (optional) last `history_len` portfolio returns, oldest-first, zero-padded.
+        if self.include_portfolio_state:
+            buf = np.zeros(self.history_len, dtype=np.float32)
+            h = self._port_return_history[-self.history_len:]
+            if h:
+                buf[-len(h):] = np.asarray(h, dtype=np.float32)
+            parts.append(buf)
+
+        obs = np.concatenate(parts).astype(np.float32)
         return np.nan_to_num(obs, nan=0.0, posinf=0.0, neginf=0.0)

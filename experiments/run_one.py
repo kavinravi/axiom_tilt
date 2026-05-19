@@ -63,6 +63,11 @@ def _build_env(scoreboard, cfg, seed):
         downside_lambda=cfg.get('downside_lambda', 5.0),
         action_high=cfg['action_high'],
         score_bias=cfg.get('score_bias', 0.0),
+        baseline_anchor=cfg.get('baseline_anchor', False),
+        tilt_scale=cfg.get('tilt_scale', 1.0),
+        include_portfolio_state=cfg.get('include_portfolio_state', False),
+        history_len=cfg.get('history_len', 4),
+        cost_anneal_episodes=cfg.get('cost_anneal_episodes', 0),
     ))
 
 
@@ -154,12 +159,22 @@ def backtest_against_score_prop(cfg: dict, out_dir: Path) -> dict:
     algo_class = {'PPO': PPO, 'SAC': SAC, 'TD3': TD3}[cfg['algo'].upper()]
     model = algo_class.load(out_dir / 'best_model.zip')
 
+    env_kwargs = dict(
+        scoreboard=sb_test, top_k=TOP_K,
+        episode_length=cfg['episode_length'],
+        cost_bps=cfg['cost_bps'], max_weight=cfg['max_weight'],
+        reward_type=cfg['reward_type'], action_high=cfg['action_high'],
+        score_bias=cfg.get('score_bias', 0.0),
+        baseline_anchor=cfg.get('baseline_anchor', False),
+        tilt_scale=cfg.get('tilt_scale', 1.0),
+        include_portfolio_state=cfg.get('include_portfolio_state', False),
+        history_len=cfg.get('history_len', 4),
+        # cost_anneal_episodes intentionally omitted at backtest time:
+        # we always evaluate at the full (post-anneal) cost.
+    )
+
     def _env_fn():
-        env = PortfolioEnv(scoreboard=sb_test, top_k=TOP_K,
-                           episode_length=cfg['episode_length'],
-                           cost_bps=cfg['cost_bps'], max_weight=cfg['max_weight'],
-                           reward_type=cfg['reward_type'], action_high=cfg['action_high'],
-                           score_bias=cfg.get('score_bias', 0.0))
+        env = PortfolioEnv(**env_kwargs)
         env.reset(seed=RANDOM_STATE)
         return Monitor(env)
     vec = DummyVecEnv([_env_fn])
@@ -182,11 +197,7 @@ def backtest_against_score_prop(cfg: dict, out_dir: Path) -> dict:
         return np.array(rets), np.array(turn)
 
     def _ppo_fn(date, cur, prev_w, last_ret):
-        tmp = PortfolioEnv(scoreboard=sb_test, top_k=TOP_K,
-                           episode_length=cfg['episode_length'],
-                           cost_bps=cfg['cost_bps'], max_weight=cfg['max_weight'],
-                           reward_type=cfg['reward_type'], action_high=cfg['action_high'],
-                           score_bias=cfg.get('score_bias', 0.0))
+        tmp = PortfolioEnv(**env_kwargs)
         tmp.reset(seed=0)
         tmp._idx = tmp._dates.tolist().index(date)
         tmp._weights = np.asarray(prev_w, dtype=np.float32)
@@ -194,6 +205,13 @@ def backtest_against_score_prop(cfg: dict, out_dir: Path) -> dict:
         obs = tmp._build_obs()
         obs_norm = vec.normalize_obs(obs)
         action, _ = model.predict(obs_norm, deterministic=True)
+        # If baseline_anchor, replicate env's tilt transform; else raw simplex projection.
+        if cfg.get('baseline_anchor', False):
+            raw_scores = cur['score'].to_numpy(dtype=np.float32)[:TOP_K]
+            baseline_w = project_to_simplex(raw_scores, max_weight=cfg['max_weight'])
+            tilted = np.log(baseline_w + 1e-8) + cfg.get('tilt_scale', 1.0) * np.asarray(action, dtype=np.float32)
+            return project_to_simplex(np.asarray(tilted, dtype=np.float64),
+                                      max_weight=cfg['max_weight'])
         return project_to_simplex(np.asarray(action, dtype=np.float64),
                                   max_weight=cfg['max_weight'])
 
@@ -236,8 +254,13 @@ def main():
     exp_id = cfg.get('exp_id', cfg_path.stem)
     out_dir = EXP_DIR / 'runs' / exp_id
 
+    # Allow per-config seed override (for replication / seed-variance studies).
+    global RANDOM_STATE
+    RANDOM_STATE = int(cfg.get('seed', RANDOM_STATE))
+
     print(f'=== EXPERIMENT {exp_id} ===')
     print(f'config: {json.dumps(cfg, indent=2)}')
+    print(f'seed: {RANDOM_STATE}')
     print()
 
     train_metrics = train_one(cfg, out_dir)
