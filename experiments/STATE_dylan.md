@@ -426,3 +426,104 @@ My ranker's scores differ, so the SP softmax-cap policy got
 more-concentrated bets that paid in 2009's bull recovery. Conclusions about
 mechanism (concentration, gross alpha, seed-multimodality) should transfer
 to Kavin's session; absolute Sharpe numbers will not.
+
+## Phase 4 — final seed-stability sweep (definitive numbers)
+
+Added 4 more seeds for tl=0.75 (now n=7), γ=0.80 axis extension, and γ=0.85
++ tl=0.5 combo. Total runs in session: **45**.
+
+### tl=0.75 across 7 seeds (the cherry-picked "winner")
+
+| seed | Sharpe | turnover | excess |
+|---|---|---|---|
+| 0    | 2.424 | 0.021 | −0.370 |
+| 7    | 2.306 | 0.287 | −0.487 |
+| 13   | 2.417 | 0.143 | −0.376 |
+| **42** | **2.902** | **0.588** | **+0.108** ★ |
+| 100  | 2.440 | 0.022 | −0.354 |
+| 1000 | 2.424 | 0.029 | −0.370 |
+| 2024 | 2.417 | 0.055 | −0.377 |
+
+**Mean: 2.476, std: 0.193, n=7. Win rate: 1/7 (14%).**
+
+Without seed=42: mean 2.405, std 0.047. seed=42 is **>2σ outlier** (z=2.6).
+The "PPO beats SP" claim from the single d_141 win is **not statistically
+defensible** — the expected Sharpe at this config is 2.40-2.48, below SP's
+2.79.
+
+### γ=0.85 across 3 seeds (the robust HP)
+
+| seed | Sharpe | turnover | excess |
+|---|---|---|---|
+| 7    | 2.365 | 0.075 | −0.428 |
+| 42   | 2.449 | 0.402 | −0.345 |
+| 100  | 2.408 | 0.065 | −0.385 |
+
+**Mean: 2.407, std: 0.042, n=3.** Robust positive improvement over baseline
+(2.30), but consistent loss to SP (−0.38). No seed crosses the bar.
+
+### Baseline across 3 seeds (the control)
+
+| seed | Sharpe | turnover | excess |
+|---|---|---|---|
+| 7    | 2.241 | 0.260 | −0.553 |
+| 42   | 2.239 | 0.278 | −0.555 |
+| 100  | 2.410 | 0.071 | −0.383 |
+
+**Mean: 2.297, std: 0.099, n=3.**
+
+### Honest aggregate
+
+```
+config            n  mean   std   p(beat SP)
+SP (baseline bar) -  2.79   -     -
+baseline          3  2.30  0.10   0%   (-0.49)
+γ=0.85            3  2.41  0.04   0%   (-0.38)
+γ=0.80            2  2.41  0.07   0%   (-0.37)
+tl=0.5            3  2.55  0.23   1/3 by seed (42 only)
+tl=0.75           7  2.48  0.19   1/7 by seed (42 only)
+```
+
+### Conclusions (final)
+
+**The "PPO beats SP" claim is not robust on walk-1 2009.** Across 45 runs
+and the best-performing reward shape, PPO's expected Sharpe sits ~0.3-0.4
+below SP. Two seed=42 wins exist (Sharpe 2.81 and 2.90 with λ ∈ [0.5, 0.75])
+but they're 2σ+ outliers from the 7-seed distribution.
+
+**The real, replicable finding** is the reward-shape sensitivity: the
+`sharpe_turnover` reward type at moderate λ shifts PPO's mean Sharpe by
+roughly +0.17 over the `sharpe` baseline. Same applies to γ ↓ (each step
+from 0.99 to 0.80 adds ~+0.05). These are real, modest effects with low
+seed variance.
+
+**The mechanism** (from the deep-dive): every PPO config (winning or not)
+holds a portfolio with top-10 Jaccard 0.18-0.23 vs SP — PPO is mining the
+ranker's mid-tail. *When* PPO gets lucky and concentrates on the right
+mid-tail names (seed=42), it beats SP by gross alpha (+7.5 bps/wk for
+d_141). *When* it doesn't (other seeds), it ends up with worse mid-tail
+picks than SP's flat softmax-cap policy.
+
+**Why seed=42 is special** is unanswered (could be exploration trajectory,
+initial-weight luck, or interaction with the 2009 test-year price path).
+Worth a Phase 5 investigation if Kavin's session has compute to spare.
+
+**For paper headline**: "PPO with sharpe_turnover reward improves *mean*
+Sharpe vs baseline `sharpe` reward by ~+0.2 across seeds, but does not
+reliably beat Score-Prop on walk-1 2009 (mean ≈ 2.48, SP = 2.79, win rate
+1/7)." Cherry-picked single-seed wins are framed as "*upper-tail behavior
+suggests a high-alpha policy exists in the optimization landscape; current
+PPO+sharpe_turnover at λ=0.75 finds it ~15% of the time*." Multi-seed
+ensembling or a stronger exploration mechanism is the obvious followup.
+
+### Final session stats
+
+- 45 total PPO training runs (Phase 1: 15, Phase 2: 12, Phase 3: 9, Phase 4: 9)
+- Wall time: ~6.5 hours
+- 2 single-seed wins (both at seed=42, sharpe_turnover reward)
+- 0 robust (mean over ≥3 seeds) wins
+- 1 robust positive HP: γ ↓ from 0.99 to 0.80 ish
+- Code changes: `src/utils/rl_env.py` added `sharpe_turnover` reward type
+  + `turnover_lambda` knob
+- All results in `experiments/results_dylan.tsv` (45 rows + header + smoke);
+  per-run logs in `experiments/runs/d_*/train.log` (gitignored)
